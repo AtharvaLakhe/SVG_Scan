@@ -125,7 +125,7 @@
   fetch('https://api.github.com/repos/' + REPO)
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (!j || typeof j.stargazers_count !== 'number') return;
+      if (!j || typeof j.stargazers_count !== 'number' || j.stargazers_count < 5) return;
       const n = j.stargazers_count;
       $('#starCount').textContent = n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : n;
       $('#starCount').hidden = false;
