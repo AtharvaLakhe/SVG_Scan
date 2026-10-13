@@ -2,11 +2,13 @@
  * SVG Scan tracing engine
  * https://github.com/AtharvaLakhe/SVG_Scan
  *
- * Raster to vector in four passes:
+ * Raster to vector:
  *   1. quantize  k-means++ in OKLab picks a perceptual palette, every pixel gets a label
  *   2. clean     anti-aliasing halos, ragged gradient bands and specks are removed
- *   3. trace     each color layer is walked along its pixel edges into closed loops
- *   4. fit       corners are found, the rest is fit with least-squares cubic Béziers
+ *   3. merge     bands of one smooth shading rejoin across soft borders
+ *   4. trace     each color layer is walked along its pixel edges into closed loops
+ *   5. fit       corners are found, the rest is fit with least-squares cubic Béziers
+ *   6. shade     shaded regions get linear or (focal) radial gradients
  *
  * Zero dependencies. Runs in a Web Worker, on the main thread, or in Node.
  * MIT License
@@ -23,7 +25,7 @@
     majority: 0,      // passes of a 3x3 majority filter; smooths ragged gradient bands
     dehalo: true,     // fold anti-aliasing slivers back into the colors they blend
     gradients: true,  // give shaded regions a linear gradient instead of a flat fill
-    merge: 6,         // merge touching regions that together fit one gradient this well (RMS, 0-255)
+    merge: 6,         // merge regions across soft borders while one gradient still fits this well (RMS, 0-255)
     blur: 0,          // pre-blur radius, helps photos
     precision: 1,     // decimals in path data
     stacked: true     // stack layers so neighbours never leave hairline gaps
@@ -49,7 +51,7 @@
     if (o.dehalo) dehalo(labels, W, H, palette);
     for (var pass = 0; pass < o.majority; pass++) majority(labels, W, H);
     if (o.noise > 1) despeckle(labels, W, H, Math.round(o.noise));
-    if (o.gradients && o.merge > 0) mergeRamps(image.data, labels, W, H, palette.length / 3, o.merge);
+    if (o.gradients && o.merge > 0) mergeSmooth(image.data, labels, W, H, palette.length / 3, o.merge);
 
     // Final colors are each region's average on the original pixels, measured
     // away from its edges so anti-aliasing doesn't tint flat colors.
@@ -77,7 +79,9 @@
 
     var grads = o.gradients ? fitGradients(image.data, labels, W, H, K) : [];
 
-    var mask = new Uint8Array(N), layers = [], nodes = 0;
+    var mask = new Uint8Array(N), layers = [], nodes = 0, pixelsOf = [], fillAt = new Int32Array(K);
+    for (i = 0; i < K; i++) pixelsOf.push(new Int32Array(area[i]));
+    for (i = 0; i < N; i++) { l = labels[i]; if (l >= 0) pixelsOf[l][fillAt[l]++] = i; }
     var fitOpts = {
       tol: Math.max(0.2, o.tolerance),
       passes: o.smoothness <= 0 ? 0 : Math.max(1, Math.round(o.smoothness * 2.3)),
@@ -95,8 +99,9 @@
       if (r === 0 && o.stacked) {
         for (i = 0; i < N; i++) mask[i] = labels[i] >= 0 ? 1 : 0;
       } else {
-        for (i = 0; i < N; i++) mask[i] = labels[i] >= 0 && rank[labels[i]] === r ? 1 : 0;
-        var lb0 = order[r];
+        var lb0 = order[r], own = pixelsOf[lb0];
+        mask.fill(0);
+        for (i = 0; i < own.length; i++) mask[own[i]] = 1;
         var x0 = Math.max(0, box[lb0 * 4] - reach), y0 = Math.max(0, box[lb0 * 4 + 1] - reach);
         var x1 = Math.min(W - 1, box[lb0 * 4 + 2] + reach), y1 = Math.min(H - 1, box[lb0 * 4 + 3] + reach);
         for (var step = 0; step < reach; step++) {
@@ -335,136 +340,289 @@
     }
   }
 
-  // Shading. Per region, sums over its interior pixels (n, x, y, xx, xy, yy, and
-  // per channel c, cx, cy, cc) are enough to fit color as a linear ramp along
-  // one direction by least squares. Sums add, so two regions can be tested as
-  // one without touching pixels again.
-  var SF = 18;
-  function regionStats(px, L, W, H, K) {
-    var S = new Float64Array(K * SF), cx = W / 2, cy = H / 2;
-    for (var y = 1; y < H - 1; y++) {
-      for (var x = 1; x < W - 1; x++) {
-        var i = y * W + x, l = L[i];
-        if (l < 0 || L[i - 1] !== l || L[i + 1] !== l || L[i - W] !== l || L[i + W] !== l) continue;
-        var u = x - cx, v = y - cy, b = l * SF;
-        S[b]++; S[b + 1] += u; S[b + 2] += v; S[b + 3] += u * u; S[b + 4] += u * v; S[b + 5] += v * v;
-        for (var ch = 0; ch < 3; ch++) {
-          var c = px[i * 4 + ch], q = b + 6 + ch * 4;
-          S[q] += c; S[q + 1] += c * u; S[q + 2] += c * v; S[q + 3] += c * c;
-        }
+  // Shading. A region's color is modelled three ways, each fit to its interior
+  // pixels, and the best one wins:
+  //   flat    one color
+  //   linear  a color profile along the direction the color changes fastest
+  //   radial  a color profile by distance from a point (a lit ball, a glow)
+  // Profiles are free-form (BINS buckets, later thinned to a few gradient
+  // stops), so a sky running through four colors or a ball with a highlight
+  // fits as well as a plain two-color ramp. The linear direction comes from a
+  // least-squares plane, the radial center from the peak of a least-squares
+  // bowl c = a + b*u + c*v + d*(u^2 + v^2), which sits at (-b/2d, -c/2d).
+  var BINS = 16;
+  function shading(px, pix, W, H, mark, stamp, step, refine) {
+    step = step || 1;
+    var ox = W / 2, oy = H / 2, sc = Math.max(W, H) / 2, k, p, x, y, u, v, q, ch, c;
+    var n = 0, su = 0, sv = 0, suu = 0, suv = 0, svv = 0, sq = 0, suq = 0, svq = 0, sqq = 0;
+    var C = new Float64Array(15); // per channel: c, cu, cv, cq, cc
+    for (k = 0; k < pix.length; k += step) {
+      p = pix[k]; x = p % W; y = (p - x) / W;
+      if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1 || mark[p - 1] !== stamp || mark[p + 1] !== stamp || mark[p - W] !== stamp || mark[p + W] !== stamp) continue;
+      u = (x - ox) / sc; v = (y - oy) / sc; q = u * u + v * v;
+      n++; su += u; sv += v; suu += u * u; suv += u * v; svv += v * v; sq += q; suq += u * q; svq += v * q; sqq += q * q;
+      for (ch = 0; ch < 3; ch++) {
+        c = px[p * 4 + ch];
+        C[ch * 5] += c; C[ch * 5 + 1] += c * u; C[ch * 5 + 2] += c * v; C[ch * 5 + 3] += c * q; C[ch * 5 + 4] += c * c;
       }
     }
-    return S;
-  }
-
-  // Fits color = mean + rate * t, where t runs along the direction the color
-  // changes fastest. Returns the ramp and its RMS error (in 0-255 units).
-  function rampFit(S, b) {
-    var n = S[b];
-    if (n < 3) return null;
-    var mx = S[b + 1] / n, my = S[b + 2] / n;
-    var sxx = S[b + 3] / n - mx * mx, sxy = S[b + 4] / n - mx * my, syy = S[b + 5] / n - my * my;
-    var det = sxx * syy - sxy * sxy, mean = [], vr = [], cvx = [], cvy = [], variance = 0, ch;
-    var m00 = 0, m01 = 0, m11 = 0;
+    if (n < 50) return null;
+    var mu = su / n, mv = sv / n, cuu = suu / n - mu * mu, cuv = suv / n - mu * mv, cvv = svv / n - mv * mv;
+    var det = cuu * cvv - cuv * cuv, mean = [], flat = 0, m00 = 0, m01 = 0, m11 = 0, wsum = 0, rx = 0, ry = 0;
+    var A = [n, su, sv, sq, su, suu, suv, suq, sv, suv, svv, svq, sq, suq, svq, sqq];
     for (ch = 0; ch < 3; ch++) {
-      var q = b + 6 + ch * 4, mc = S[q] / n;
+      var mc = C[ch * 5] / n;
       mean.push(mc);
-      cvx.push(S[q + 1] / n - mc * mx); cvy.push(S[q + 2] / n - mc * my);
-      var vc = Math.max(0, S[q + 3] / n - mc * mc);
-      vr.push(vc); variance += vc;
-      if (det > 1e-6) {
-        var gx = (syy * cvx[ch] - sxy * cvy[ch]) / det, gy = (sxx * cvy[ch] - sxy * cvx[ch]) / det;
+      flat += C[ch * 5 + 4] - n * mc * mc;
+      if (det > 1e-12) {
+        var cu = C[ch * 5 + 1] / n - mc * mu, cv = C[ch * 5 + 2] / n - mc * mv;
+        var gx = (cvv * cu - cuv * cv) / det, gy = (cuu * cv - cuv * cu) / det;
         m00 += gx * gx; m01 += gx * gy; m11 += gy * gy;
       }
+      var sol = solve(A.slice(), [C[ch * 5], C[ch * 5 + 1], C[ch * 5 + 2], C[ch * 5 + 3]], 4);
+      if (sol && Math.abs(sol[3]) > 1e-3) {
+        var w = sol[3] * sol[3];
+        rx += w * -sol[1] / (2 * sol[3]); ry += w * -sol[2] / (2 * sol[3]); wsum += w;
+      }
     }
-    var flat = { n: n, mean: mean, rms: Math.sqrt(variance / 3), variance: variance, ratio: 0 };
-    if (det <= 1e-6 || m00 + m11 < 1e-12) return flat;
-    var th = 0.5 * Math.atan2(2 * m01, m00 - m11), ux = Math.cos(th), uy = Math.sin(th);
-    var vt = ux * ux * sxx + 2 * ux * uy * sxy + uy * uy * syy;
-    if (vt < 1e-6) return flat;
-    var rate = [], sse = 0;
-    for (ch = 0; ch < 3; ch++) {
-      var cov = ux * cvx[ch] + uy * cvy[ch];
-      rate.push(cov / vt);
-      sse += Math.max(0, vr[ch] - cov * cov / vt);
+    var res = { n: n, mean: mean, sse: Math.max(0, flat), flat: Math.max(0, flat), type: 'flat' };
+    // nothing to shade: skip the profile passes entirely
+    if (res.flat < 3 * n * 2.25) return res;
+    var models = [];
+    if (m00 + m11 > 1e-12) {
+      var th = 0.5 * Math.atan2(2 * m01, m00 - m11);
+      models.push({ type: 'linear', ux: Math.cos(th), uy: Math.sin(th) });
     }
-    return { n: n, mean: mean, rms: Math.sqrt(sse / 3), variance: variance, ratio: variance > 0 ? 1 - sse / variance : 0,
-      mx: mx, my: my, ux: ux, uy: uy, rate: rate };
+    if (wsum > 0) {
+      rx /= wsum; ry /= wsum;
+      // a center far outside the region means the shading is really a ramp
+      if (Math.hypot(rx - mu, ry - mv) < 2.5 * Math.sqrt(Math.max(1e-12, cuu + cvv))) models.push({ type: 'radial', rx: rx, ry: ry });
+    }
+    if (!models.length) return res;
+
+    // Gather the pixels once (coords, colors, interior flag) so profiles can be
+    // re-evaluated cheaply, including inside the focal-point search below.
+    function gather(stride) {
+      var m = Math.ceil(pix.length / stride), G = { U: new Float64Array(m), V: new Float64Array(m), R: new Float64Array(m * 3), I: new Uint8Array(m), m: m, cc: 0 };
+      for (var a = 0, kk = 0; kk < pix.length; kk += stride, a++) {
+        var pp = pix[kk], xx = pp % W, yy = (pp - xx) / W;
+        G.U[a] = (xx - ox) / sc; G.V[a] = (yy - oy) / sc;
+        if (xx < 1 || yy < 1 || xx >= W - 1 || yy >= H - 1 || mark[pp - 1] !== stamp || mark[pp + 1] !== stamp || mark[pp - W] !== stamp || mark[pp + W] !== stamp) continue;
+        G.I[a] = 1;
+        for (var c3 = 0; c3 < 3; c3++) { var cv3 = px[pp * 4 + c3]; G.R[a * 3 + c3] = cv3; G.cc += cv3 * cv3; }
+      }
+      return G;
+    }
+    // Position t of a pixel along a model: projection for linear; for radial the
+    // t at which the circle centered f + t*e with radius t passes through it
+    // (SVG's focal radial gradient; e = 0 gives plain concentric rings).
+    function tOf(mdl, uu, vv) {
+      if (mdl.type === 'linear') return uu * mdl.ux + vv * mdl.uy;
+      var wx = uu - mdl.fx, wy = vv - mdl.fy, wd = wx * mdl.ex + wy * mdl.ey, ww = wx * wx + wy * wy;
+      var a2 = mdl.ex * mdl.ex + mdl.ey * mdl.ey - 1;
+      return a2 > -1e-9 ? Math.sqrt(ww) : (wd - Math.sqrt(Math.max(0, wd * wd - a2 * ww))) / a2;
+    }
+    function profile(mdl, G, keepBins) {
+      var lo = Infinity, hi = -Infinity, a, T = new Float64Array(G.m);
+      for (a = 0; a < G.m; a++) { var t = tOf(mdl, G.U[a], G.V[a]); T[a] = t; if (t < lo) lo = t; if (t > hi) hi = t; }
+      if (!(hi > lo)) return null;
+      var Bn = new Float64Array(BINS * 4), span = hi - lo;
+      for (a = 0; a < G.m; a++) {
+        if (!G.I[a]) continue;
+        var j = Math.min(BINS - 1, ((T[a] - lo) / span * BINS) | 0) * 4;
+        Bn[j]++; Bn[j + 1] += G.R[a * 3]; Bn[j + 2] += G.R[a * 3 + 1]; Bn[j + 3] += G.R[a * 3 + 2];
+      }
+      var sse = G.cc;
+      for (j = 0; j < BINS * 4; j += 4) if (Bn[j]) sse -= (Bn[j + 1] * Bn[j + 1] + Bn[j + 2] * Bn[j + 2] + Bn[j + 3] * Bn[j + 3]) / Bn[j];
+      return { sse: Math.max(0, sse), lo: lo, hi: hi, bins: keepBins ? Bn : null };
+    }
+
+    var full = gather(step);
+    function score(mdl) {
+      var pr = profile(mdl, full, true);
+      if (!pr) return;
+      mdl.sse = pr.sse; mdl.lo = pr.lo; mdl.hi = pr.hi; mdl.bins = pr.bins;
+      if (mdl.sse < res.sse) { res.sse = mdl.sse; res.type = mdl.type; res.model = mdl; }
+    }
+    models.forEach(function (mdl) {
+      if (mdl.type === 'radial') { mdl.fx = mdl.rx; mdl.fy = mdl.ry; mdl.ex = 0; mdl.ey = 0; }
+      score(mdl);
+    });
+    // (only worth it when rings clearly describe the region)
+    if (refine && res.type === 'radial' && res.sse < 0.6 * res.flat) {
+      // Lit 3D shapes have off-center highlights: their rings shift as they
+      // grow. Search focal point and ring shift on a sample of the pixels.
+      var mdl = res.model, G = gather(Math.max(step, Math.ceil(pix.length / 5000))), spread = Math.sqrt(Math.max(1e-12, cuu + cvv));
+      var best = nelderMead(function (x) {
+        if (x[2] * x[2] + x[3] * x[3] > 0.9) return Infinity;
+        var pr = profile({ type: 'radial', fx: x[0], fy: x[1], ex: x[2], ey: x[3] }, G, false);
+        return pr ? pr.sse : Infinity;
+      }, [mdl.rx, mdl.ry, 0, 0], [spread * 0.3, spread * 0.3, 0.25, 0.25], 45);
+      score({ type: 'radial', fx: best[0], fy: best[1], ex: best[2], ey: best[3] });
+    }
+    return res;
   }
 
-  // Quantizing a smooth gradient slices it into bands. Greedily merge the pair
-  // of touching regions whose union still fits one linear ramp best, until no
-  // pair fits within `limit`. A banded sky collapses back into one shape.
-  function mergeRamps(px, L, W, H, K, limit) {
-    var S = regionStats(px, L, W, H, K), touch = new Map(), i, a, b;
-    for (i = 0; i < W * H; i++) {
-      a = L[i];
-      if (a < 0) continue;
-      if ((i + 1) % W && (b = L[i + 1]) !== a && b >= 0) touch.set(Math.min(a, b) * K + Math.max(a, b), 1);
-      if (i + W < W * H && (b = L[i + W]) !== a && b >= 0) touch.set(Math.min(a, b) * K + Math.max(a, b), 1);
+  function nelderMead(f, x0, steps, iters) {
+    var n = x0.length, pts = [x0.slice()], i, j;
+    for (i = 0; i < n; i++) { var q = x0.slice(); q[i] += steps[i]; pts.push(q); }
+    var vals = pts.map(f);
+    function mix(a, b, t) { return a.map(function (v, k) { return v + (b[k] - v) * t; }); }
+    for (var it = 0; it < iters; it++) {
+      var idx = vals.map(function (_, k) { return k; }).sort(function (a, b) { return vals[a] - vals[b]; });
+      pts = idx.map(function (k) { return pts[k]; }); vals = idx.map(function (k) { return vals[k]; });
+      var c = new Array(n).fill(0);
+      for (i = 0; i < n; i++) for (j = 0; j < n; j++) c[j] += pts[i][j] / n;
+      var xr = mix(c, pts[n], -1), fr = f(xr);
+      if (fr < vals[0]) {
+        var xe = mix(c, pts[n], -2), fe = f(xe);
+        if (fe < fr) { pts[n] = xe; vals[n] = fe; } else { pts[n] = xr; vals[n] = fr; }
+      } else if (fr < vals[n - 1]) { pts[n] = xr; vals[n] = fr; }
+      else {
+        var xc = mix(c, pts[n], 0.5), fc = f(xc);
+        if (fc < vals[n]) { pts[n] = xc; vals[n] = fc; }
+        else for (i = 1; i <= n; i++) { pts[i] = mix(pts[0], pts[i], 0.5); vals[i] = f(pts[i]); }
+      }
     }
-    var parent = new Int16Array(K), tmp = new Float64Array(SF), merged = false;
-    for (i = 0; i < K; i++) parent[i] = i;
+    var b = 0;
+    for (i = 1; i <= n; i++) if (vals[i] < vals[b]) b = i;
+    return pts[b];
+  }
+
+  // Quantizing smooth shading slices it into bands whose borders are soft:
+  // the source image barely changes across them. Real edges are sharp. Merge
+  // regions across soft borders, softest first, whenever the union is still
+  // described by one gradient profile about as well as its parts were.
+  function mergeSmooth(px, L, W, H, K, limit) {
+    var N = W * H, i, a, b, g, ch;
+    var pairs = new Map();
+    function edge(p, q, d) {
+      a = L[p]; b = L[q];
+      if (a === b || a < 0 || b < 0) return;
+      var p0 = p - d, q1 = q + d;
+      if (p0 < 0 || q1 >= N) return;
+      for (g = 0, ch = 0; ch < 3; ch++) g = Math.max(g, Math.abs(px[q1 * 4 + ch] - px[p0 * 4 + ch]));
+      var key = Math.min(a, b) * K + Math.max(a, b), e = pairs.get(key);
+      if (!e) pairs.set(key, e = [0, 0]);
+      e[0]++; e[1] += g / 3;
+    }
+    for (i = W; i < N - 2 * W; i++) {
+      var li = L[i];
+      if (li < 0) continue;
+      if (L[i + 1] !== li) { var x = i % W; if (x > 0 && x < W - 2) edge(i, i + 1, 1); }
+      if (L[i + W] !== li) edge(i, i + W, W);
+    }
+    var soft = [];
+    pairs.forEach(function (e, key) { if (e[0] >= 8 && e[1] / e[0] < 4) soft.push([e[1] / e[0], (key / K) | 0, key % K]); });
+    if (!soft.length) return;
+    soft.sort(function (p1, p2) { return p1[0] - p2[0]; });
+
+    var count = new Int32Array(K), lists = [], parent = new Int32Array(K), rep = [], mark = new Int32Array(N), stamp = 0;
+    for (i = 0; i < N; i++) if (L[i] >= 0) count[L[i]]++;
+    for (i = 0; i < K; i++) { lists.push(new Int32Array(count[i])); count[i] = 0; parent[i] = i; }
+    for (i = 0; i < N; i++) if (L[i] >= 0) lists[L[i]][count[L[i]]++] = i;
     function find(v) { while (parent[v] !== v) v = parent[v] = parent[parent[v]]; return v; }
-    for (;;) {
-      var best = null, bestRms = limit;
-      touch.forEach(function (_, key) {
-        var ra = find((key / K) | 0), rb = find(key % K);
-        if (ra === rb || S[ra * SF] < 30 || S[rb * SF] < 30) return;
-        for (var f = 0; f < SF; f++) tmp[f] = S[ra * SF + f] + S[rb * SF + f];
-        var fit = rampFit(tmp, 0);
-        if (!fit || fit.rms >= bestRms) return;
-        // a merged region too small to earn a gradient must already be one flat color
-        if (tmp[0] < 400 && fit.rms >= 3) return;
-        // only merge slices of the same ramp: the union may not fit much worse than its parts
-        var fa = rampFit(S, ra * SF), fb = rampFit(S, rb * SF);
-        if (fit.rms > Math.max(fa.rms, fb.rms) * 1.3 + 1) return;
-        bestRms = fit.rms; best = [ra, rb];
-      });
-      if (!best) break;
-      for (var f2 = 0; f2 < SF; f2++) S[best[0] * SF + f2] += S[best[1] * SF + f2];
-      parent[best[1]] = best[0];
+    function rms(pix, refine) {
+      stamp++;
+      for (var k = 0; k < pix.length; k++) mark[pix[k]] = stamp;
+      // a sample is plenty to judge a merge; the final gradient uses every pixel
+      var s = shading(px, pix, W, H, mark, stamp, Math.max(1, (pix.length / 20000) | 0), refine);
+      return s ? Math.sqrt(s.sse / (3 * s.n)) : Infinity;
+    }
+    var merged = false;
+    for (i = 0; i < soft.length; i++) {
+      var ra = find(soft[i][1]), rb = find(soft[i][2]);
+      if (ra === rb) continue;
+      var union = new Int32Array(lists[ra].length + lists[rb].length);
+      union.set(lists[ra]); union.set(lists[rb], lists[ra].length);
+      if (rep[ra] === undefined) rep[ra] = rms(lists[ra]);
+      if (rep[rb] === undefined) rep[rb] = rms(lists[rb]);
+      var err = rms(union), cap = Math.max(rep[ra], rep[rb]) * 1.25 + 1;
+      // close calls get the slower focal-point fit before being turned down
+      if ((!(err < limit) || err > cap) && err < 1.6 * Math.min(limit, cap)) err = rms(union, true);
+      if (!(err < limit) || err > cap) continue;
+      parent[rb] = ra; lists[ra] = union; lists[rb] = null; rep[ra] = err;
       merged = true;
     }
-    if (!merged) return;
-    for (i = 0; i < W * H; i++) if (L[i] >= 0) L[i] = find(L[i]);
+    if (merged) for (i = 0; i < N; i++) if (L[i] >= 0) L[i] = find(L[i]);
   }
 
-  // Regions whose color ramps clearly get a linear gradient along that ramp.
+  // Turns each region's best shading model into an SVG gradient.
   function fitGradients(px, L, W, H, K) {
-    var S = regionStats(px, L, W, H, K), out = new Array(K), fit = [], l, i, cx = W / 2, cy = H / 2;
+    var N = W * H, count = new Int32Array(K), lists = [], out = new Array(K), mark = new Int32Array(N), i, l;
+    var ox = W / 2, oy = H / 2, sc = Math.max(W, H) / 2;
+    for (i = 0; i < N; i++) if (L[i] >= 0) count[L[i]]++;
+    for (l = 0; l < K; l++) { lists.push(count[l] >= 400 ? new Int32Array(count[l]) : null); count[l] = 0; }
+    for (i = 0; i < N; i++) { l = L[i]; if (l >= 0 && lists[l]) lists[l][count[l]++] = i; }
     for (l = 0; l < K; l++) {
-      var r = rampFit(S, l * SF);
-      if (!r || !r.rate || r.n < 400 || r.variance < 4 || r.ratio < 0.3) continue;
-      r.lo = Infinity; r.hi = -Infinity;
-      fit[l] = r;
-    }
-    // Extent of each region along its gradient direction.
-    for (i = 0; i < W * H; i++) {
-      l = L[i];
-      var f = l >= 0 && fit[l];
-      if (!f) continue;
-      var x = i % W, y = (i - x) / W, t = (x - cx - f.mx) * f.ux + (y - cy - f.my) * f.uy;
-      if (t < f.lo) f.lo = t;
-      if (t > f.hi) f.hi = t;
-    }
-    for (l = 0; l < K; l++) {
-      f = fit[l];
-      if (!f) continue;
-      var from = [], to = [], span = 0;
-      for (var ch = 0; ch < 3; ch++) {
-        from.push(clamp(Math.round(f.mean[ch] + f.rate[ch] * f.lo), 0, 255));
-        to.push(clamp(Math.round(f.mean[ch] + f.rate[ch] * f.hi), 0, 255));
-        span = Math.max(span, Math.abs(to[ch] - from[ch]));
+      if (!lists[l]) continue;
+      for (i = 0; i < lists[l].length; i++) mark[lists[l][i]] = l + 1;
+      var s = shading(px, lists[l], W, H, mark, l + 1, 1, true);
+      // the gradient has to explain a real share of the variation
+      if (!s || s.type === 'flat' || s.sse > 0.6 * s.flat) continue;
+      var m = s.model, stops = [];
+      for (var j = 0; j < BINS; j++) {
+        var B = m.bins, c = B[j * 4];
+        if (!c) continue;
+        var t = m.lo + (j + 0.5) / BINS * (m.hi - m.lo);
+        stops.push([m.type === 'linear' ? (j + 0.5) / BINS : t / m.hi, [B[j * 4 + 1] / c, B[j * 4 + 2] / c, B[j * 4 + 3] / c]]);
       }
-      if (span < 10) continue;
-      out[l] = {
-        x1: round1(cx + f.mx + f.ux * f.lo), y1: round1(cy + f.my + f.uy * f.lo),
-        x2: round1(cx + f.mx + f.ux * f.hi), y2: round1(cy + f.my + f.uy * f.hi),
-        from: hex(from), to: hex(to)
-      };
+      stops = thinStops(stops, 2.5);
+      var span = 0;
+      for (j = 1; j < stops.length; j++) for (var ch = 0; ch < 3; ch++) span = Math.max(span, Math.abs(stops[j][1][ch] - stops[0][1][ch]));
+      if (stops.length < 2 || span < 8) continue;
+      var g = { type: m.type, stops: stops.map(function (st) { return [Math.round(st[0] * 1000) / 1000, hex(st[1].map(function (v) { return clamp(Math.round(v), 0, 255); }))]; }) };
+      if (m.type === 'linear') {
+        g.x1 = round1(ox + m.ux * m.lo * sc); g.y1 = round1(oy + m.uy * m.lo * sc);
+        g.x2 = round1(ox + m.ux * m.hi * sc); g.y2 = round1(oy + m.uy * m.hi * sc);
+      } else {
+        g.cx = round1(ox + (m.fx + m.ex * m.hi) * sc); g.cy = round1(oy + (m.fy + m.ey * m.hi) * sc); g.r = round1(m.hi * sc);
+        if (m.ex || m.ey) { g.fx = round1(ox + m.fx * sc); g.fy = round1(oy + m.fy * sc); }
+      }
+      g.from = g.stops[0][1]; g.to = g.stops[g.stops.length - 1][1];
+      out[l] = g;
     }
     return out;
+  }
+
+  // Drops gradient stops that the stops either side of them already predict
+  // to within `tol` (0-255), most redundant first.
+  function thinStops(stops, tol) {
+    for (;;) {
+      var bestI = -1, bestE = tol;
+      for (var i = 1; i < stops.length - 1; i++) {
+        var a = stops[i - 1], b = stops[i + 1], t = (stops[i][0] - a[0]) / (b[0] - a[0]), e = 0;
+        for (var ch = 0; ch < 3; ch++) e = Math.max(e, Math.abs(a[1][ch] + (b[1][ch] - a[1][ch]) * t - stops[i][1][ch]));
+        if (e < bestE) { bestE = e; bestI = i; }
+      }
+      if (bestI < 0) return stops;
+      stops.splice(bestI, 1);
+    }
+  }
+
+  // Gaussian elimination with partial pivoting on an n x n row-major matrix.
+  function solve(A, b, n) {
+    for (var c = 0; c < n; c++) {
+      var piv = c;
+      for (var r = c + 1; r < n; r++) if (Math.abs(A[r * n + c]) > Math.abs(A[piv * n + c])) piv = r;
+      if (Math.abs(A[piv * n + c]) < 1e-12) return null;
+      if (piv !== c) {
+        for (var k = 0; k < n; k++) { var t = A[c * n + k]; A[c * n + k] = A[piv * n + k]; A[piv * n + k] = t; }
+        t = b[c]; b[c] = b[piv]; b[piv] = t;
+      }
+      for (r = c + 1; r < n; r++) {
+        var m = A[r * n + c] / A[c * n + c];
+        for (k = c; k < n; k++) A[r * n + k] -= m * A[c * n + k];
+        b[r] -= m * b[c];
+      }
+    }
+    var x = new Array(n);
+    for (r = n - 1; r >= 0; r--) {
+      var acc = b[r];
+      for (k = r + 1; k < n; k++) acc -= A[r * n + k] * x[k];
+      x[r] = acc / A[r * n + r];
+    }
+    return x;
   }
   function round1(v) { return Math.round(v * 10) / 10; }
 
@@ -835,8 +993,12 @@
   }
 
   function gradientDef(id, g) {
-    return '<linearGradient id="' + id + '" gradientUnits="userSpaceOnUse" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 +
-      '"><stop offset="0" stop-color="' + g.from + '"/><stop offset="1" stop-color="' + g.to + '"/></linearGradient>';
+    var stops = g.stops.map(function (st) { return '<stop offset="' + st[0] + '" stop-color="' + st[1] + '"/>'; }).join('');
+    if (g.type === 'radial') {
+      return '<radialGradient id="' + id + '" gradientUnits="userSpaceOnUse" cx="' + g.cx + '" cy="' + g.cy + '" r="' + g.r + '"' +
+        (g.fx !== undefined ? ' fx="' + g.fx + '" fy="' + g.fy + '"' : '') + '>' + stops + '</radialGradient>';
+    }
+    return '<linearGradient id="' + id + '" gradientUnits="userSpaceOnUse" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '">' + stops + '</linearGradient>';
   }
 
   // opt: { hidden: Set of layer colors to leave out, gradients: false for flat fills, width, height }

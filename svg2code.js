@@ -458,11 +458,18 @@
         usesAapt = true;
         lines.push(ind(depth + 1) + '<aapt:attr name="android:fillColor">');
         lines.push(ind(depth + 2) + '<gradient');
-        lines.push(ind(depth + 3) + 'android:type="linear"');
-        lines.push(ind(depth + 3) + 'android:startX="' + grad.x1 + '"');
-        lines.push(ind(depth + 3) + 'android:startY="' + grad.y1 + '"');
-        lines.push(ind(depth + 3) + 'android:endX="' + grad.x2 + '"');
-        lines.push(ind(depth + 3) + 'android:endY="' + grad.y2 + '">');
+        if (grad.radial) {
+          lines.push(ind(depth + 3) + 'android:type="radial"');
+          lines.push(ind(depth + 3) + 'android:centerX="' + grad.cx + '"');
+          lines.push(ind(depth + 3) + 'android:centerY="' + grad.cy + '"');
+          lines.push(ind(depth + 3) + 'android:gradientRadius="' + grad.r + '">');
+        } else {
+          lines.push(ind(depth + 3) + 'android:type="linear"');
+          lines.push(ind(depth + 3) + 'android:startX="' + grad.x1 + '"');
+          lines.push(ind(depth + 3) + 'android:startY="' + grad.y1 + '"');
+          lines.push(ind(depth + 3) + 'android:endX="' + grad.x2 + '"');
+          lines.push(ind(depth + 3) + 'android:endY="' + grad.y2 + '">');
+        }
         grad.stops.forEach(function (s) { lines.push(ind(depth + 3) + '<item android:offset="' + s[0] + '" android:color="' + s[1] + '" />'); });
         lines.push(ind(depth + 2) + '</gradient>');
         lines.push(ind(depth + 1) + '</aapt:attr>');
@@ -470,11 +477,12 @@
       }
     }
 
-    // Linear gradients in user space map onto VectorDrawable's <gradient> (API 24+).
+    // User-space gradients map onto VectorDrawable's <gradient> (API 24+). It has
+    // no focal point, so focal radial gradients become concentric ones.
     // Bounding-box and transformed gradients fall back to their first stop color.
     function gradientOf(v, alpha) {
       var m = /^url\(\s*['"]?#([^'")]+)/.exec((v || '').trim()), g = m && grads[m[1]];
-      if (!g || g.name !== 'linearGradient' || get(g, 'gradientUnits') !== 'userSpaceOnUse' || get(g, 'gradientTransform')) return null;
+      if (!g || !/^(linear|radial)Gradient$/.test(g.name) || get(g, 'gradientUnits') !== 'userSpaceOnUse' || get(g, 'gradientTransform')) return null;
       var stops = g.children.filter(function (c) { return c.name === 'stop'; }).map(function (st) {
         var css = {};
         parseStyle(get(st, 'style') || '').forEach(function (p) { css[p[0]] = p[1]; });
@@ -484,6 +492,7 @@
       });
       if (stops.length < 2) return null;
       function n(k) { return fmt(roundNum(parseFloat(get(g, k)) || 0, 2)); }
+      if (g.name === 'radialGradient') return { radial: true, cx: n('cx'), cy: n('cy'), r: n('r'), stops: stops };
       return { x1: n('x1'), y1: n('y1'), x2: n('x2'), y2: n('y2'), stops: stops };
     }
   }

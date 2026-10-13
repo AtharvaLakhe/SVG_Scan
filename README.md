@@ -29,7 +29,7 @@ Most "PNG to SVG" sites upload your image to a server, wrap the result in a payw
 - **Drop, paste or pick** any PNG, JPG, WebP or GIF. <kbd>Ctrl</kbd> <kbd>V</kbd> works from anywhere on the page.
 - **Presets** for logos, illustrations, photos and line art, auto-picked from the image's colors.
 - **Live sliders** for colors, detail, smoothness and noise. Every change re-traces off the main thread.
-- **Smooth gradients**: shaded areas come out as real `<linearGradient>` fills instead of stepped bands. Toggle it to see the difference.
+- **Smooth gradients**: shaded areas come out as real `<linearGradient>` and `<radialGradient>` fills (with focal points for lit 3D shapes) instead of stepped bands. Toggle it to see the difference.
 - **Compare, Vector and Outline views**, with a drag-to-compare slider and zoom up to 3200%. The original pixelates, the vector stays sharp.
 - **Drop a color** from the palette to delete it from the export. Click the background swatch and you've removed the background.
 - **Real stats**: path count, node count, file size, trace time.
@@ -46,32 +46,37 @@ Paste or open any SVG and get it back in seven shapes:
 | **Clean SVG** | Editor cruft removed, numbers rounded, path data rewritten in its shortest form |
 | **CSS** | A class with the SVG as a URL-encoded background, or as a `mask` when using `currentColor` |
 | **Data URI** | A ready-to-paste `<img>` with a base64 source |
-| **Android** | A `VectorDrawable` XML, with shapes converted to paths, transforms mapped to groups and linear gradients kept |
+| **Android** | A `VectorDrawable` XML, with shapes converted to paths, transforms mapped to groups and linear and radial gradients kept |
 
 Toggle **TypeScript**, switch every color to **`currentColor`** for icon sets, or pick how many **decimals** to keep. An Inkscape export typically comes out 50 to 70% smaller.
 
 ## How the tracer works
 
-All of it lives in [`tracer.js`](tracer.js), about 800 lines with no dependencies.
+All of it lives in [`tracer.js`](tracer.js), about 1,000 lines with no dependencies.
 
 1. **Quantize.** k-means++ picks a palette in the [OKLab](https://bottosson.github.io/posts/oklab/) color space, so clusters spread evenly over what the eye can tell apart, then every pixel snaps to its nearest color. Flat images with few colors skip clustering and keep their exact colors.
-2. **Clean.** Anti-aliased edges leave thin bands of in-between color (orange next to black makes a brown outline). A pixel at most 3 px thick whose color sits between its two neighbours' colors folds back into the closer one; real thin lines survive because they aren't blends. A 3×3 majority filter smooths dithered band edges, specks below the noise threshold merge into their neighbour, and touching regions that together fit one linear color ramp are merged, so a banded sky collapses back into one shape.
-3. **Trace.** Each color is walked along its pixel edges into closed loops, clockwise around shapes and counter-clockwise around holes, so the default fill rule renders holes correctly. The largest layer covers the whole silhouette and every other layer reaches a few pixels under the layers drawn above it, so each edge is drawn over its real neighbour and anti-aliasing never lets an unrelated color bleed through as a seam.
-4. **Fit.** Loops are built from edge *midpoints*, which turns pixel staircases into clean diagonals. A corner is a point where the turn is sharp across ±k pixels *and* most of it survives at ±k/2 (a tight curve loses half its turn, a real corner keeps it); each corner is snapped to where its two edges intersect. Between corners the outline is lightly smoothed, then fit with least-squares cubic Béziers using Schneider's algorithm with Newton–Raphson reparameterization. Finally each region's color is fit as a linear ramp by least squares, and regions where the ramp explains the shading get a `<linearGradient>`.
+2. **Clean.** Anti-aliased edges leave thin bands of in-between color (orange next to black makes a brown outline). A pixel at most 3 px thick whose color sits between its two neighbours' colors folds back into the closer one; real thin lines survive because they aren't blends. A 3×3 majority filter smooths dithered band edges and specks below the noise threshold merge into their neighbour.
+3. **Merge.** Quantizing smooth shading slices it into bands, and the borders between those bands are *soft*: the source image barely changes across them, while real edges are sharp. Regions are merged across soft borders, softest first, but only when the union is still described by one gradient about as well as its parts were. A banded sky or a lit ball collapses back into one shape.
+4. **Trace.** Each color is walked along its pixel edges into closed loops, clockwise around shapes and counter-clockwise around holes, so the default fill rule renders holes correctly. The largest layer covers the whole silhouette and every other layer reaches a few pixels under the layers drawn above it, so each edge is drawn over its real neighbour and anti-aliasing never lets an unrelated color bleed through as a seam.
+5. **Fit curves.** Loops are built from edge *midpoints*, which turns pixel staircases into clean diagonals. A corner is a point where the turn is sharp across ±k pixels *and* most of it survives at ±k/2 (a tight curve loses half its turn, a real corner keeps it); each corner is snapped to where its two edges intersect. Between corners the outline is lightly smoothed, then fit with least-squares cubic Béziers using Schneider's algorithm with Newton–Raphson reparameterization.
+6. **Fit gradients.** Each region's shading is modelled three ways: flat, *linear* (a color profile along the direction a least-squares plane says the color changes fastest) and *radial* (a profile by distance from the peak of a least-squares bowl `c = a + bu + cv + d(u² + v²)`). Profiles are free-form, 16 buckets thinned to the fewest stops that reproduce them, so a four-color sky fits as well as a two-color ramp. Lit 3D shapes have off-center highlights whose rings shift as they grow, so radial winners get a Nelder–Mead search for SVG's focal point (`fx`, `fy`). The best model becomes a `<linearGradient>` or `<radialGradient>`.
 
 Path data is written with relative commands computed between already-rounded points (so rounding never drifts), implicit command repetition, and the fewest separators the SVG grammar allows.
 
 ### Benchmarks
 
-Default presets, traced at the app's working resolution, compared with the first release of the engine:
+Each version with its own default presets, traced at the app's working resolution. Error is RMSE between the source and the rendered SVG (0–255, lower is better).
 
-| Image | First release | Now | Error (RMSE, lower is better) |
+| Image | First release | Now | Error |
 | --- | --- | --- | --- |
-| Fox emoji | 120 KB, 6,111 nodes | **29 KB**, 1,273 nodes | 7.05 → **6.34** |
-| Watermelon emoji | 50 KB, 2,372 nodes | **8 KB**, 299 nodes | 6.66 → **5.34** |
+| Fox emoji | 192 KB, 10,739 nodes | **27 KB**, 1,085 nodes | 6.86 → **5.70** |
+| Rocket emoji | 91 KB, 4,997 nodes | **14 KB**, 393 nodes | 6.88 → **5.25** |
+| Watermelon emoji | 64 KB, 3,345 nodes | **10 KB**, 350 nodes | 7.21 → **5.16** |
+| Shaded sphere | 59 KB, 3,945 nodes | **3.6 KB**, 125 nodes | 5.63 → **5.38** |
+| Gradient sunset | 97 KB, 12,342 nodes | **5.3 KB**, 168 nodes | 5.96 → **2.94** |
 | Flat logo with text | 16 KB, 972 nodes | **2.5 KB**, 113 nodes | 10.30 → **7.66** |
 | Line art | 14 KB, 794 nodes | **3.7 KB**, 150 nodes | 7.66 → **7.38** |
-| Landscape photo | 765 KB, 43,207 nodes | **130 KB**, 6,946 nodes | 16.50 → **14.29** |
+| Landscape photo | 927 KB, 54,460 nodes | **131 KB**, 6,946 nodes | 17.11 → **14.26** |
 
 ## Use the engine in your own project
 
@@ -104,8 +109,8 @@ const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colo
 | `noise` | `8` | Regions with fewer pixels than this get absorbed |
 | `majority` | `0` | Passes of the 3×3 majority filter |
 | `dehalo` | `true` | Fold anti-aliasing halos back into the colors they blend |
-| `gradients` | `true` | Give shaded regions a linear gradient instead of a flat fill |
-| `merge` | `6` | Merge touching regions that together fit one gradient within this RMS error (0–255) |
+| `gradients` | `true` | Give shaded regions a linear or radial gradient instead of a flat fill |
+| `merge` | `6` | Merge regions across soft borders while one gradient still fits within this RMS error (0–255) |
 | `blur` | `0` | Box blur radius applied before quantizing |
 | `precision` | `1` | Decimals in the path data |
 
@@ -133,7 +138,7 @@ npx serve .        # or: python -m http.server
 - [ ] CLI: `npx svg-scan logo.png > logo.svg`
 - [ ] Publish the engine to npm
 - [x] Gradient detection, so smooth fills become `<linearGradient>` instead of bands
-- [ ] Radial gradients for round, lit shapes
+- [x] Radial gradients with focal points for round, lit shapes
 - [ ] Centerline tracing for line art and handwriting
 - [ ] Flutter and SwiftUI output
 - [ ] Batch mode: drop a folder, get a zip
