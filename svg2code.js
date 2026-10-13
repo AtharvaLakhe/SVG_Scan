@@ -402,6 +402,7 @@
     }
     function ind(n) { return '    '.repeat(n); }
 
+    var usesAapt = false;
     lines.push('<vector xmlns:android="http://schemas.android.com/apk/res/android"');
     lines.push('    android:width="' + fmt(roundNum(d.w, 2)) + 'dp"');
     lines.push('    android:height="' + fmt(roundNum(d.h, 2)) + 'dp"');
@@ -417,6 +418,7 @@
 
     if (shift) lines.push(ind(1) + '</group>');
     lines.push('</vector>');
+    if (usesAapt) lines.splice(1, 0, '    xmlns:aapt="http://schemas.android.com/aapt"');
     return lines.join('\n') + '\n';
 
     function visit(children, inh, depth) {
@@ -448,8 +450,41 @@
         if (st['stroke-linejoin'] !== 'miter') a.push('android:strokeLineJoin="' + st['stroke-linejoin'] + '"');
       }
       a.push('android:pathData="' + optimizePath(path, prec) + '"');
+      var grad = gradientOf(st.fill, +st['fill-opacity'] * st.opacity);
+      if (grad) a = a.filter(function (x) { return x.indexOf('android:fillColor') !== 0; });
       lines.push(ind(depth) + '<path');
-      a.forEach(function (x, i) { lines.push(ind(depth + 1) + x + (i === a.length - 1 ? ' />' : '')); });
+      a.forEach(function (x, i) { lines.push(ind(depth + 1) + x + (i === a.length - 1 && !grad ? ' />' : grad && i === a.length - 1 ? '>' : '')); });
+      if (grad) {
+        usesAapt = true;
+        lines.push(ind(depth + 1) + '<aapt:attr name="android:fillColor">');
+        lines.push(ind(depth + 2) + '<gradient');
+        lines.push(ind(depth + 3) + 'android:type="linear"');
+        lines.push(ind(depth + 3) + 'android:startX="' + grad.x1 + '"');
+        lines.push(ind(depth + 3) + 'android:startY="' + grad.y1 + '"');
+        lines.push(ind(depth + 3) + 'android:endX="' + grad.x2 + '"');
+        lines.push(ind(depth + 3) + 'android:endY="' + grad.y2 + '">');
+        grad.stops.forEach(function (s) { lines.push(ind(depth + 3) + '<item android:offset="' + s[0] + '" android:color="' + s[1] + '" />'); });
+        lines.push(ind(depth + 2) + '</gradient>');
+        lines.push(ind(depth + 1) + '</aapt:attr>');
+        lines.push(ind(depth) + '</path>');
+      }
+    }
+
+    // Linear gradients in user space map onto VectorDrawable's <gradient> (API 24+).
+    // Bounding-box and transformed gradients fall back to their first stop color.
+    function gradientOf(v, alpha) {
+      var m = /^url\(\s*['"]?#([^'")]+)/.exec((v || '').trim()), g = m && grads[m[1]];
+      if (!g || g.name !== 'linearGradient' || get(g, 'gradientUnits') !== 'userSpaceOnUse' || get(g, 'gradientTransform')) return null;
+      var stops = g.children.filter(function (c) { return c.name === 'stop'; }).map(function (st) {
+        var css = {};
+        parseStyle(get(st, 'style') || '').forEach(function (p) { css[p[0]] = p[1]; });
+        var off = String(get(st, 'offset') || '0'), o = /%$/.test(off) ? parseFloat(off) / 100 : parseFloat(off);
+        var op = parseFloat(css['stop-opacity'] || get(st, 'stop-opacity') || '1');
+        return [fmt(roundNum(o || 0, 3)), color(css['stop-color'] || get(st, 'stop-color') || '#000', alpha * (isNaN(op) ? 1 : op))];
+      });
+      if (stops.length < 2) return null;
+      function n(k) { return fmt(roundNum(parseFloat(get(g, k)) || 0, 2)); }
+      return { x1: n('x1'), y1: n('y1'), x2: n('x2'), y2: n('y2'), stops: stops };
     }
   }
 

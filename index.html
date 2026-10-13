@@ -298,6 +298,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px 
 
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 6px; min-height: 32px; }
 .swatches .muted { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--faint); line-height: 1.4; }
+.panel-toggle { font-size: 14px; font-weight: 500; }
 .swatch {
   position: relative; aspect-ratio: 1; padding: 0; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .14);
   background: var(--c); transition: transform .2s var(--ease), opacity .25s; animation: pop .45s var(--ease) both; animation-delay: calc(var(--i) * 28ms);
@@ -592,6 +593,7 @@ textarea::placeholder { color: var(--faint); }
           <label class="slider"><span>Detail</span><output id="detailOut">65</output><input type="range" id="detail" min="0" max="100" value="65"></label>
           <label class="slider"><span>Smoothness</span><output id="smoothOut">70</output><input type="range" id="smooth" min="0" max="100" value="70"></label>
           <label class="slider"><span>Noise filter</span><output id="noiseOut">28</output><input type="range" id="noise" min="0" max="100" value="28"></label>
+          <label class="toggle panel-toggle"><input type="checkbox" id="optGradients" checked><span></span>Smooth gradients</label>
         </div>
         <div class="group">
           <h3>Palette <small>Click a color to drop it</small></h3>
@@ -670,7 +672,7 @@ textarea::placeholder { color: var(--faint); }
 
   <section class="how" id="how">
     <h2>A tracer you can read in one sitting</h2>
-    <p>No servers, no AI guesswork, no dependencies. About 500 lines of plain JavaScript turn pixels into paths in four passes, inside a Web Worker so the page never stutters.</p>
+    <p>No servers, no AI guesswork, no dependencies. About 800 lines of plain JavaScript turn pixels into paths in four passes, inside a Web Worker so the page never stutters.</p>
     <ol class="steps">
       <li>
         <figure class="mat">
@@ -682,7 +684,7 @@ textarea::placeholder { color: var(--faint); }
           </svg>
         </figure>
         <h3>Quantize</h3>
-        <p>k-means++ picks the palette, then every pixel snaps to its nearest color.</p>
+        <p>k-means++ in the OKLab color space picks a palette that matches what your eye sees, then every pixel snaps to its nearest color.</p>
       </li>
       <li>
         <figure class="mat">
@@ -695,7 +697,7 @@ textarea::placeholder { color: var(--faint); }
           </svg>
         </figure>
         <h3>Clean</h3>
-        <p>Specks smaller than the noise filter merge into whichever neighbour surrounds them most.</p>
+        <p>Anti-aliasing halos fold back into their neighbours, specks merge away, and slices of one gradient rejoin into a single shape.</p>
       </li>
       <li>
         <figure class="mat">
@@ -706,7 +708,7 @@ textarea::placeholder { color: var(--faint); }
           </svg>
         </figure>
         <h3>Trace</h3>
-        <p>Each color is walked along its pixel edges into closed loops. Layers stack, so neighbours never leave hairline gaps.</p>
+        <p>Each color is walked along its pixel edges into closed loops, and tucks a few pixels under its neighbours so seams never show.</p>
       </li>
       <li>
         <figure class="mat">
@@ -718,7 +720,7 @@ textarea::placeholder { color: var(--faint); }
           </svg>
         </figure>
         <h3>Fit</h3>
-        <p>Loops are simplified with Ramer–Douglas–Peucker, real corners stay sharp, and the rest becomes smooth cubic Béziers.</p>
+        <p>Real corners are found and snapped sharp, the rest is fit with least-squares cubic Béziers, and shaded regions get a gradient.</p>
       </li>
     </ol>
   </section>

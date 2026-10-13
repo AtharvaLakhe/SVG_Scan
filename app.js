@@ -179,7 +179,7 @@
   const PRESETS = {
     logo: { colors: 6, detail: 72, smooth: 55, noise: 22, blur: 0, majority: 0 },
     illustration: { colors: 14, detail: 60, smooth: 72, noise: 30, blur: 1, majority: 2 },
-    photo: { colors: 24, detail: 45, smooth: 80, noise: 40, blur: 1, majority: 2 },
+    photo: { colors: 20, detail: 45, smooth: 80, noise: 50, blur: 2, majority: 3 },
     lineart: { colors: 2, detail: 75, smooth: 62, noise: 26, blur: 0, majority: 0 }
   };
 
@@ -222,10 +222,12 @@
       colors: +sliders.colors.value,
       tolerance: 0.25 + Math.pow(1 - d / 100, 1.5) * 3.2,
       smoothness: s / 100 * 1.3,
-      corner: 35 + s * 0.75,
+      corner: 42 + s * 0.28,
       noise: Math.max(1, Math.round(n * n / 12 * mp)),
       blur: T.blur,
       majority: T.majority,
+      gradients: $('#optGradients').checked,
+      merge: 6,
       precision: 1
     };
   }
@@ -457,11 +459,14 @@
     const r = T.result;
     const how = !reveal || reduceMotion ? 'fresh' : r.stats.nodes < 14000 ? 'draw' : 'wipe';
     const hair = (Math.max(r.width, r.height) / 360).toFixed(2);
-    let html = '<svg viewBox="0 0 ' + r.width + ' ' + r.height + '" preserveAspectRatio="none" style="--hair:' + hair + 'px">';
+    let html = '<svg viewBox="0 0 ' + r.width + ' ' + r.height + '" preserveAspectRatio="none" style="--hair:' + hair + 'px">', defs = '';
     r.layers.forEach((l, i) => {
-      html += '<path fill="' + l.color + '" d="' + l.d + '"' + (how === 'draw' ? ' pathLength="1"' : '') +
+      let fill = l.color;
+      if (l.gradient) { defs += SVGScan.gradientDef('sg' + i, l.gradient); fill = 'url(#sg' + i + ')'; }
+      html += '<path fill="' + fill + '" d="' + l.d + '"' + (how === 'draw' ? ' pathLength="1"' : '') +
         ' style="--i:' + i + '"' + (T.hidden.has(l.color) ? ' class="off"' : '') + '/>';
     });
+    if (defs) html = html.replace('>', '><defs>' + defs + '</defs>');
     vector.className = 'vector';
     vector.innerHTML = html + '</svg>';
     void vector.offsetWidth;
@@ -493,12 +498,12 @@
     T.result.layers.forEach((l, i) => {
       const b = document.createElement('button');
       b.className = 'swatch';
-      b.style.setProperty('--c', l.color);
+      b.style.setProperty('--c', l.gradient ? 'linear-gradient(135deg,' + l.gradient.from + ',' + l.gradient.to + ')' : l.color);
       b.style.setProperty('--i', i);
       if (!animate) b.style.animation = 'none';
       b.setAttribute('aria-pressed', !T.hidden.has(l.color));
       const pct = l.coverage * 100;
-      b.title = l.color + ', covers ' + (pct < 1 ? '<1' : Math.round(pct)) + '% of the image';
+      b.title = (l.gradient ? l.gradient.from + ' to ' + l.gradient.to + ' gradient' : l.color) + ', covers ' + (pct < 1 ? '<1' : Math.round(pct)) + '% of the image';
       b.setAttribute('aria-label', 'Color ' + l.color + (T.hidden.has(l.color) ? ', dropped' : ''));
       b.addEventListener('click', () => {
         if (T.hidden.has(l.color)) T.hidden.delete(l.color); else T.hidden.add(l.color);
@@ -540,6 +545,7 @@
     });
   });
   $$('#presets .chip').forEach((c) => c.addEventListener('click', () => applyPreset(c.dataset.preset, true)));
+  $('#optGradients').addEventListener('change', () => requestTrace(false));
 
   $('#download').addEventListener('click', () => {
     const name = T.name + '.svg';
