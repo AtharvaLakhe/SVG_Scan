@@ -29,7 +29,8 @@ Most "PNG to SVG" sites upload your image to a server, wrap the result in a payw
 - **Drop, paste or pick** any PNG, JPG, WebP or GIF. <kbd>Ctrl</kbd> <kbd>V</kbd> works from anywhere on the page.
 - **Presets** for logos, illustrations, compact photos, line art, detailed images, and a Clean finish. Complex and shaded grayscale images automatically use Detailed: 64 colors, fine curves, and no structural cleanup. Choose Clean finish for softer shading and less grain at high zoom.
 - **Live controls** for up to 128 colors, detail, smoothness, noise and edge-aware denoising. Fast, Balanced and Fine resolutions work up to 900, 1400 and 2200 px, within a four-million-pixel ceiling. Every change re-traces off the main thread.
-- **Focused workspace** with an image header, canvas background choices, Adjust and Palette tabs, an always-visible desktop export area, and a keyboard shortcuts dialog. Advanced cleanup stays out of the way until needed.
+- **Canvas-first workspace** with a pale drafting surface, compact forest chrome, illustrated trace presets, Adjust and Palette tabs, and anchored desktop exports. The introduction steps aside after loading an image. Focus mode expands the editor; Fit, actual-size zoom and a miniature navigator make enlarged images easier to explore. Advanced cleanup and technical explanations stay out of the way until needed.
+- **Current-result exports** wait for settings changes to finish tracing, including during slider debounce and code-mode switching. Cancelling a retrace restores access to the last completed vector.
 - **Transparency** stays translucent through a vector luminance mask applied once to the composed layers. No embedded bitmap.
 - **Cancel and replace** long traces; results from old images and settings are discarded.
 - **Smooth gradients**: shaded areas come out as real `<linearGradient>` and `<radialGradient>` fills (with focal points for lit 3D shapes) instead of stepped bands. Toggle it to see the difference.
@@ -156,7 +157,8 @@ npx serve .        # or: python -m http.server
 | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> | Compare, Vector, Outline view |
 | <kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd> | Zoom in, zoom out, fit |
 | <kbd>?</kbd> | Open keyboard shortcuts |
-| Double-click | Zoom to 400% at that point, or back to fit |
+| Double-click | Zoom in at that point, or back to fit |
+| <kbd>Esc</kbd> | Close keyboard help, or leave Focus mode |
 
 ## Development checks
 

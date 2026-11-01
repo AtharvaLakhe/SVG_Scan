@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SVG Scan: trace images to SVG, turn SVG into code</title>
 <meta name="description" content="Free, open-source image to SVG converter and SVG to React, Vue, CSS and Android code generator. Runs entirely in your browser. No uploads, no sign-up.">
-<meta name="theme-color" content="#0d1814">
+<meta name="theme-color" content="#111b18">
 <script>document.documentElement.classList.add("js")</script>
 <meta property="og:type" content="website">
 <meta property="og:title" content="SVG Scan: pixels in, paths out">
@@ -17,7 +17,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d1814'/%3E%3Cpath d='M7 24C10 9 22 23 25 8' fill='none' stroke='%23e8f1ec' stroke-width='2.6' stroke-linecap='round'/%3E%3Crect x='4.5' y='21.5' width='5' height='5' fill='%23ff5d8f'/%3E%3Crect x='22.5' y='5.5' width='5' height='5' fill='%23ff5d8f'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 @property --scan { syntax: '<percentage>'; inherits: true; initial-value: 100%; }
 @property --split { syntax: '<percentage>'; inherits: true; initial-value: 50%; }
@@ -486,14 +486,14 @@ textarea::placeholder { color: var(--faint); }
         <rect x="3.5" y="22.5" width="5" height="5" rx="1" fill="#ff5d8f"/>
         <rect x="23.5" y="4.5" width="5" height="5" rx="1" fill="#ff5d8f"/>
       </svg>
-      SVG Scan
+      SVG Scan <span class="brand-edition">Vector studio</span>
     </a>
     <div class="top-actions">
       <span class="privacy-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Z"/><path d="m8 12 3 3 5-6"/></svg>Images stay on your device</span>
       <a class="byline" href="https://github.com/AtharvaLakhe" target="_blank" rel="noopener">by @AtharvaLakhe</a>
       <a class="star" href="https://github.com/AtharvaLakhe/SVG_Scan" target="_blank" rel="noopener" aria-label="Star SVG Scan on GitHub">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg>
-        Star
+        GitHub
         <span class="count" id="starCount" hidden></span>
       </a>
     </div>
@@ -502,10 +502,8 @@ textarea::placeholder { color: var(--faint); }
   <section class="hero">
     <h1 class="headline" id="headline">
       <span class="hl-crisp">Pixels in. Paths out.</span>
-      <span class="hl-pixel" aria-hidden="true">Pixels in. Paths out.</span>
-      <span class="hl-beam" aria-hidden="true"></span>
     </h1>
-    <p class="lede">From a first sketch to the finest detail.<br> Turn images into editable vectors and ready-to-use code.</p>
+    <p class="lede">Trace images into editable vectors.<br> Refine the palette, curves, and finish.</p>
   </section>
 
   <main id="workspace">
@@ -516,7 +514,7 @@ textarea::placeholder { color: var(--faint); }
       <span class="ink" aria-hidden="true"></span>
     </div>
 
-      <button class="shortcut-button" id="openShortcuts" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M6 10h2m3 0h2m3 0h2M6 14h2m3 0h7"/></svg><span>Shortcuts</span><kbd>?</kbd></button>
+      <div class="workspace-actions"><button class="shortcut-button" id="focusWorkspace" aria-label="Focus workspace" aria-pressed="false" title="Focus workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg><span>Focus</span></button><button class="shortcut-button" id="openShortcuts" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M6 10h2m3 0h2m3 0h2M6 14h2m3 0h7"/></svg><span>Shortcuts</span><kbd>?</kbd></button></div>
     </div>
 
     <!-- ===== Image to SVG ===== -->
@@ -526,6 +524,22 @@ textarea::placeholder { color: var(--faint); }
           <div class="file-info"><span class="file-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 16l3-3 5 4"/></svg></span><div><strong id="imageName">Your canvas</strong><span id="imageMeta">Drop an image to get started</span></div></div>
           <span class="trace-state" id="traceState" role="status">Ready when you are</span>
           <label class="surface-picker"><span class="sr-only">Canvas background</span><select id="canvasBackground" aria-label="Canvas background"><option value="grid">Grid</option><option value="checker">Transparency</option><option value="paper">Light</option><option value="dark">Dark</option></select></label>
+          <label class="btn small quiet replace-image" aria-label="Replace image" title="Replace image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg><span>Replace</span><input type="file" id="fileInput2" accept="image/*"></label>
+        </div>
+        <div class="canvas-tools" id="stageBar" hidden>
+          <div class="seg" id="viewSeg" role="group" aria-label="View">
+            <button data-view="compare" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M6 5H3v10h3m8-10h3v10h-3"/></svg>Compare</button>
+            <button data-view="vector" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 15C6 4 14 16 16 5M3 13h3v3H3zm12-9h3v3h-3z"/></svg>Vector</button>
+            <button data-view="outline" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 3 7 7-7 7-7-7Z"/></svg>Outline</button>
+          </div>
+          <div class="zoom-tools" role="group" aria-label="Zoom">
+            <button id="zoomOut" aria-label="Zoom out" title="Zoom out">&minus;</button>
+            <output id="zoomLevel" aria-label="Zoom level">100%</output>
+            <button id="zoomIn" aria-label="Zoom in" title="Zoom in">+</button>
+            <span class="tool-divider" aria-hidden="true"></span>
+            <button id="zoomFit" aria-label="Fit to screen" title="Fit image to canvas">Fit</button>
+            <button id="zoomActual" aria-label="Actual size" title="Actual size: one image pixel per screen pixel">1:1</button>
+          </div>
         </div>
       <div class="stage mat" id="stage">
         <div class="empty" id="empty">
@@ -543,7 +557,7 @@ textarea::placeholder { color: var(--faint); }
             <circle cx="104" cy="40" r="3" fill="#ff5d8f"/><circle cx="160" cy="26" r="3" fill="#ff5d8f"/>
             <rect x="100" y="68" width="8" height="8" fill="#ff5d8f"/><rect x="156" y="48" width="8" height="8" fill="#ff5d8f"/>
           </svg>
-          <h2>Drop an image to trace it</h2>
+          <h2>Give your pixels a new shape.</h2>
           <p>PNG, JPG, WebP or GIF. You can also paste with <kbd>Ctrl</kbd>&nbsp;<kbd>V</kbd>.</p>
           <label class="btn primary">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-5 5 5-5 5 5M4 20h16"/></svg>
@@ -551,7 +565,7 @@ textarea::placeholder { color: var(--faint); }
             <input type="file" id="fileInput" accept="image/*">
           </label>
           <div class="samples">
-            <span>or try</span>
+            <span>Start with a sample</span>
             <button class="sample" data-sample="🦊" aria-label="Trace a fox">🦊</button>
             <button class="sample" data-sample="🍉" aria-label="Trace a watermelon">🍉</button>
             <button class="sample" data-sample="🚀" aria-label="Trace a rocket">🚀</button>
@@ -578,22 +592,7 @@ textarea::placeholder { color: var(--faint); }
 
         <div class="status" id="status" role="status"><span id="statusText">Reading colors</span><span class="status-bar"><i></i></span></div>
 
-        <div class="stage-bar" id="stageBar" hidden>
-          <div class="seg" id="viewSeg" role="group" aria-label="View">
-            <button data-view="compare" aria-pressed="true">Compare</button>
-            <button data-view="vector" aria-pressed="false">Vector</button>
-            <button data-view="outline" aria-pressed="false">Outline</button>
-          </div>
-          <div class="seg" role="group" aria-label="Zoom">
-            <button id="zoomOut" aria-label="Zoom out">&minus;</button>
-            <button id="zoomFit" class="zoom-val" aria-label="Fit to screen">Fit</button>
-            <button id="zoomIn" aria-label="Zoom in">+</button>
-          </div>
-          <label class="btn small quiet" style="background:rgba(13,24,20,.86)">
-            New image
-            <input type="file" id="fileInput2" accept="image/*">
-          </label>
-        </div>
+        <button class="navigator" id="navigator" aria-label="Fit image to canvas" title="Return to the full image" hidden><span class="navigator-image"><img id="navigatorImage" alt=""><span id="navigatorWindow"></span></span><span class="navigator-label">Back to fit <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg></span></button>
       </div>
 
         <div class="canvas-footer">        <dl class="stats">
@@ -602,36 +601,36 @@ textarea::placeholder { color: var(--faint); }
           <div><dt>File size</dt><dd id="stSize">0 KB</dd></div>
           <div><dt>Traced in</dt><dd id="stTime">0 ms</dd></div>
         </dl>
-<span class="canvas-hint">Scroll to zoom · Drag to pan</span></div>
+<span class="canvas-hint" id="viewNote">Scroll to zoom. Drag to explore.</span></div>
       </div>
 
       <aside class="panel" id="controls" aria-label="Trace settings">
-        <div class="inspector-heading"><h2>Trace settings</h2><button class="text-button" id="resetSettings" title="Reset to the suggested preset">Reset</button></div>
+        <div class="inspector-heading"><div><h2>Make it yours</h2><p>Refine your vector</p></div><button class="text-button" id="resetSettings" title="Reset to the suggested preset"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 9a7 7 0 1 1 2 6M3 3v6h6"/></svg>Reset</button></div>
         <div class="inspector-tabs" role="tablist" aria-label="Inspector"><button role="tab" id="adjustTab" aria-controls="adjustPane" aria-selected="true">Adjust</button><button role="tab" id="paletteTab" aria-controls="palettePane" aria-selected="false" tabindex="-1">Palette <span id="paletteCount">0</span></button></div>
         <div class="inspector-scroll">
         <div id="adjustPane" role="tabpanel" aria-labelledby="adjustTab">
 
         <div class="group">
-          <h3>Start with a preset</h3>
+          <h3>Trace style</h3>
           <div class="chips" id="presets">
-            <button class="chip" data-preset="logo" aria-pressed="false">Logo</button>
-            <button class="chip" data-preset="illustration" aria-pressed="true">Illustration</button>
-            <button class="chip" data-preset="photo" aria-pressed="false">Photo</button>
-            <button class="chip" data-preset="lineart" aria-pressed="false">Line art</button>
-            <button class="chip" data-preset="detailed" aria-label="Detailed" aria-pressed="false">Detailed</button>
-            <button class="chip" data-preset="clean" aria-pressed="false">Clean finish</button>
+            <button class="chip" data-preset="logo" aria-label="Logo" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zm10 0h6v6h-6zM4 14h6v6H4zm10 0h6v6h-6z"/></svg><span>Logo<small>Bold, flat shapes</small></span></button>
+            <button class="chip" data-preset="illustration" aria-label="Illustration" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 18 5-9 4 5 3-3 5 7Z"/><circle cx="17" cy="6" r="2"/></svg><span>Illustration<small>Balanced curves</small></span></button>
+            <button class="chip" data-preset="photo" aria-label="Photo" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-4 4 3 4-6 4 7"/></svg><span>Photo<small>Simplified color</small></span></button>
+            <button class="chip" data-preset="lineart" aria-label="Line art" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19c5-19 10 8 16-14M3 21h6"/></svg><span>Line art<small>Two-tone contours</small></span></button>
+            <button class="chip" data-preset="detailed" aria-label="Detailed" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M10 7v6m-3-3h6"/></svg><span>Detailed<small>Keep the texture</small></span></button>
+            <button class="chip" data-preset="clean" aria-label="Clean finish" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 3v4m-2-2h4"/></svg><span>Clean finish<small>Softer, less grain</small></span></button>
           </div>
           <p class="trace-note preset-note" id="presetNote">Balanced curves for colorful artwork.</p>
         </div>
         <div class="group sliders">
           <label class="quality-field" for="quality">Working resolution<select id="quality"><option value="fast">Fast · up to 900 px</option><option value="balanced" selected>Balanced · up to 1400 px</option><option value="fine">Fine · up to 2200 px</option></select></label>
           <p class="trace-note" id="workingSize" aria-live="polite">Choose an image to see its working size.</p>
-          <label class="slider"><span>Colors</span><output id="colorsOut">14</output><input type="range" id="colors" min="2" max="128" value="14"></label>
-          <label class="slider"><span>Detail</span><output id="detailOut">65</output><input type="range" id="detail" min="0" max="100" value="65"></label>
-          <label class="slider"><span>Smoothness</span><output id="smoothOut">70</output><input type="range" id="smooth" min="0" max="100" value="70"></label>
+          <label class="slider"><span>Colors</span><output id="colorsOut" for="colors" aria-hidden="true">14</output><input type="range" id="colors" min="2" max="128" value="14" aria-label="Colors" aria-describedby="colorsHelp"><span class="slider-caption" id="colorsHelp">A smaller palette makes a lighter SVG.</span></label>
+          <label class="slider"><span>Detail</span><output id="detailOut" for="detail" aria-hidden="true">65</output><input type="range" id="detail" min="0" max="100" value="65" aria-label="Detail" aria-describedby="detailHelp"><span class="slider-caption" id="detailHelp">Keep more of the small shapes.</span></label>
+          <label class="slider"><span>Smoothness</span><output id="smoothOut" for="smooth" aria-hidden="true">70</output><input type="range" id="smooth" min="0" max="100" value="70" aria-label="Smoothness" aria-describedby="smoothHelp"><span class="slider-caption" id="smoothHelp">Round curves and soften small contours.</span></label>
           <details class="advanced-settings"><summary>Advanced cleanup</summary><div class="advanced-content">
-          <label class="slider"><span>Noise filter</span><output id="noiseOut">28</output><input type="range" id="noise" min="0" max="100" value="28"></label>
-          <label class="slider"><span>Edge-aware denoise</span><output id="denoiseOut">0</output><input type="range" id="denoise" min="0" max="100" value="0" aria-describedby="denoiseHelp"></label>
+          <label class="slider"><span>Noise filter</span><output id="noiseOut" for="noise" aria-hidden="true">28</output><input type="range" id="noise" min="0" max="100" value="28" aria-label="Noise filter"></label>
+          <label class="slider"><span>Edge-aware denoise</span><output id="denoiseOut" for="denoise" aria-hidden="true">0</output><input type="range" id="denoise" min="0" max="100" value="0" aria-label="Edge-aware denoise" aria-describedby="denoiseHelp"></label>
           <p class="trace-note" id="denoiseHelp">Reduce grain while keeping contrasting edges. More colors and higher resolution produce larger SVGs.</p>
           <label class="toggle panel-toggle"><input type="checkbox" id="optGradients" checked><span></span>Smooth gradients</label>
           </div></details>
@@ -639,7 +638,7 @@ textarea::placeholder { color: var(--faint); }
         </div>
         <div id="palettePane" role="tabpanel" aria-labelledby="paletteTab" hidden>
         <div class="group palette-heading">
-          <h3>Make room for less.</h3><p class="trace-note" id="paletteStatus">Trace an image to explore its colors. Click a swatch to leave that color out.</p>
+          <h3>Your color story</h3><p class="trace-note" id="paletteStatus">Trace an image to explore its colors. Click a swatch to leave that color out.</p>
           <div class="swatches" id="swatches"><p class="muted">The colors the tracer finds show up here.</p></div>
         </div>
           <button class="btn small" id="restoreColors" disabled>Restore all colors</button>
@@ -712,8 +711,9 @@ textarea::placeholder { color: var(--faint); }
     </section>
   </main>
 
+  <details class="about-tracer"><summary>About SVG Scan <span>How tracing and local processing work</span></summary>
   <section class="how" id="how">
-    <h2>A tracer you can read in one sitting</h2>
+    <h2>From image to editable paths</h2>
     <p>No servers, no AI guesswork, no dependencies. A small, readable JavaScript engine turn pixels into paths in four passes, inside a Web Worker so the page never stutters.</p>
     <ol class="steps">
       <li>
@@ -767,6 +767,7 @@ textarea::placeholder { color: var(--faint); }
     </ol>
   </section>
 
+  </details>
   <footer class="foot">
     <p>Made by <a href="https://github.com/AtharvaLakhe" target="_blank" rel="noopener">Atharva Lakhe</a>. Free and open source under the MIT license.</p>
     <nav aria-label="Project links">

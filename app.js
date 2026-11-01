@@ -155,7 +155,7 @@
     v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
     if (m === 'trace') layoutFrame();
     else {
-      $('#useTraced').hidden = !T.result;
+      $('#useTraced').hidden = !T.exportReady;
       moveInk($('#formats'), $('.fmt[aria-selected="true"]'), true);
     }
   }
@@ -172,7 +172,7 @@
 
   const T = {
     name: 'image', url: null, natW: 0, natH: 0, source: null, data: null, result: null, blur: 0, loadId: 0,
-    hidden: new Set(), view: 'compare', split: 50, busy: false, jobId: 0,
+    hidden: new Set(), view: 'compare', split: 50, busy: false, jobId: 0, exportReady: false,
     first: true, started: 0, reveal: false
   };
 
@@ -235,6 +235,7 @@
     const loadId = ++T.loadId;
     stopTrace();
     T.result = null; T.data = null; T.source = null;
+    $('#navigator').hidden = true;
     T.hidden.clear();
     vector.innerHTML = '';
     $('#swatches').innerHTML = '<p class="muted">Reading the new image…</p>';
@@ -264,6 +265,10 @@
     $('#imageName').title = T.name;
     $('#imageMeta').textContent = T.natW + ' × ' + T.natH + ' px';
     T.source = img;
+    document.body.classList.add('has-image');
+    $('#navigatorImage').src = url;
+    $('#navigator').style.setProperty('--nav-width', Math.round(96 * Math.min(1, T.natW / T.natH)) + 'px');
+    $('#navigator').style.setProperty('--nav-height', Math.round(96 * Math.min(1, T.natH / T.natW)) + 'px');
     prepareImage();
 
     T.first = true; T.hidden.clear();
@@ -287,13 +292,13 @@
   }
 
   function showWorkspace() {
-    if (!viewport.hidden) { layoutFrame(); return; }
+    if (!viewport.hidden) { layoutFrame(true); return; }
     empty.classList.add('leave');
     setTimeout(() => { empty.hidden = true; empty.classList.remove('leave'); }, reduceMotion ? 0 : 320);
     viewport.hidden = false;
     stageBar.hidden = false;
     viewport.classList.remove('enter'); void viewport.offsetWidth; viewport.classList.add('enter');
-    layoutFrame();
+    layoutFrame(true);
   }
 
   /* ---------- samples ---------- */
@@ -400,6 +405,8 @@
     if (!T.data) return;
     if (T.busy) { reveal = reveal || T.reveal; stopTrace(); }
     T.busy = true; T.reveal = reveal; T.started = performance.now();
+    setExportEnabled(false);
+    $('#exportHint').textContent = 'Updating your vector…';
     setTraceState('Tracing', 'busy');
     stage.setAttribute('aria-busy', 'true');
     const id = ++T.jobId, opts = engineOpts();
@@ -449,6 +456,7 @@
   }
 
   function setExportEnabled(enabled) {
+    T.exportReady = enabled;
     ['#download', '#copySvg', '#toCode'].forEach((id) => { $(id).disabled = !enabled; });
     $('#useTraced').hidden = !enabled;
     if (!enabled) $('#exportHint').textContent = 'Your SVG will be ready here.';
@@ -522,7 +530,6 @@
       vector.classList.remove('draw', 'wipe');
       if (T.first) {
         T.first = false;
-        setView('compare');
         const jobId = T.jobId;
         setTimeout(() => { if (jobId === T.jobId && !T.busy) showStatus(matchMedia('(pointer: coarse)').matches ? 'Pinch to zoom in. The vector stays sharp.' : 'Scroll to zoom in. The vector stays sharp.', true); }, 700);
       }
@@ -588,6 +595,7 @@
     paintSlider(input);
     input.addEventListener('input', () => {
       paintSlider(input);
+      if (T.data) { stopTrace(); setExportEnabled(false); $('#exportHint').textContent = 'Updating your vector…'; }
       $$('#presets .chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
       $('#presetNote').textContent = 'Your settings. Every change updates the vector.';
       clearTimeout(traceTimer);
@@ -601,7 +609,11 @@
     stopTrace(); prepareImage(); requestTrace(false);
   });
   $('#cancelTrace').addEventListener('click', () => {
-    stopTrace(); setTraceState('Cancelled', 'idle'); showStatus('Trace cancelled. Change a setting to trace again.', true);
+    stopTrace();
+    setExportEnabled(!!T.result);
+    setTraceState(T.result ? 'Previous vector' : 'Cancelled', 'idle');
+    if (T.result) updateStats();
+    showStatus(T.result ? 'Trace cancelled. Showing your last completed vector.' : 'Trace cancelled. Change a setting to trace again.', true);
   });
   $('#resetSettings').addEventListener('click', () => applyPreset(T.data ? guessPreset(T.data) : 'illustration', true));
   $('#restoreColors').addEventListener('click', () => {
@@ -634,6 +646,21 @@
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.target.closest('input, textarea, select') && !shortcutsDialog.open) { e.preventDefault(); shortcutsDialog.showModal(); }
   });
 
+  function setFocusMode(on) {
+    document.body.classList.toggle('editor-focus', on);
+    const button = $('#focusWorkspace');
+    button.setAttribute('aria-pressed', String(on));
+    button.setAttribute('aria-label', on ? 'Exit focus mode' : 'Focus workspace');
+    button.title = on ? 'Exit focus mode (Esc)' : 'Focus workspace';
+    $('span', button).textContent = on ? 'Exit focus' : 'Focus';
+  }
+  $('#focusWorkspace').addEventListener('click', () => setFocusMode(!document.body.classList.contains('editor-focus')));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !shortcutsDialog.open && !e.defaultPrevented && document.body.classList.contains('editor-focus')) {
+      setFocusMode(false); $('#focusWorkspace').focus();
+    }
+  });
+
   $('#download').addEventListener('click', () => {
     const name = T.name + '.svg';
     download(exportSvg(), name, 'image/svg+xml');
@@ -661,6 +688,7 @@
     frame.style.setProperty('--split', (v === 'compare' ? T.split : 0) + '%');
     $('#tags').classList.toggle('off', v !== 'compare');
     $('#splitLine').setAttribute('aria-valuenow', Math.round(T.split));
+    $('#viewNote').textContent = v === 'outline' ? 'Path boundaries for inspection. Export keeps the fills.' : v === 'compare' ? 'Drag the divider to compare.' : 'Scroll to zoom. Drag to explore.';
   }
   $$('#viewSeg button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
@@ -682,19 +710,28 @@
 
   /* ---------- zoom and pan ---------- */
 
-  const V = { s: 1, x: 0, y: 0, ts: 1, tx: 0, ty: 0, w: 0, h: 0, raf: 0 };
+  const V = { s: 1, x: 0, y: 0, ts: 1, tx: 0, ty: 0, w: 0, h: 0, vw: 0, vh: 0, raf: 0 };
 
-  function layoutFrame() {
+  function layoutFrame(reset) {
     if (!T.natW || viewport.hidden) return;
     const r = viewport.getBoundingClientRect();
     if (!r.width) return;
-    const pad = r.width < 600 ? 20 : 56, bar = 56;
-    const k = Math.min((r.width - pad * 2) / T.natW, (r.height - pad * 2 - bar) / T.natH);
+    const previousWidth = V.w, previousScale = V.ts;
+    const cx = previousWidth ? (V.vw / 2 - V.tx) / (V.w * V.ts) : .5;
+    const cy = V.h ? (V.vh / 2 - V.ty) / (V.h * V.ts) : .5;
+    const pad = r.width < 600 ? 24 : 48;
+    const k = Math.max(.001, Math.min(1, (r.width - pad * 2) / T.natW, (r.height - pad * 2) / T.natH));
     V.w = T.natW * k; V.h = T.natH * k;
+    V.vw = r.width; V.vh = r.height;
     frame.style.width = V.w + 'px';
     frame.style.height = V.h + 'px';
-    V.ts = V.s = 1;
-    centerTargets();
+    if (reset || !previousWidth || previousScale <= 1.0001) { V.ts = 1; centerTargets(); }
+    else {
+      V.ts = clamp(previousWidth * previousScale / V.w, 1, Math.max(32, T.natW / V.w));
+      V.tx = r.width / 2 - cx * V.w * V.ts; V.ty = r.height / 2 - cy * V.h * V.ts;
+      clampPan();
+    }
+    V.s = V.ts;
     V.x = V.tx; V.y = V.ty;
     applyView();
   }
@@ -702,7 +739,7 @@
   function centerTargets() {
     const r = viewport.getBoundingClientRect();
     V.tx = (r.width - V.w * V.ts) / 2;
-    V.ty = (r.height - 56 - V.h * V.ts) / 2 + 6;
+    V.ty = (r.height - V.h * V.ts) / 2;
   }
 
   function clampPan() {
@@ -719,7 +756,18 @@
     if (T.result) vector.style.setProperty('--ow', (1.25 * T.result.width / (V.w * V.s)).toFixed(4) + 'px');
     frame.classList.toggle('pixelated', V.w * V.s / T.natW > 1.6);
     viewport.classList.toggle('can-pan', V.ts > 1);
-    $('#zoomFit').textContent = V.ts <= 1.0001 ? 'Fit' : Math.round(V.ts * 100) + '%';
+    $('#zoomLevel').textContent = Math.round(V.w * V.s / T.natW * 100) + '%';
+    $('#zoomFit').setAttribute('aria-pressed', String(V.ts <= 1.0001));
+    const nav = $('#navigator');
+    nav.hidden = !T.source || V.ts <= 1.0001;
+    if (!nav.hidden) {
+      const r = { width: V.vw, height: V.vh }, w = V.w * V.s, h = V.h * V.s;
+      const left = clamp(-V.x / w, 0, 1), top = clamp(-V.y / h, 0, 1);
+      const marker = $('#navigatorWindow');
+      marker.style.left = left * 100 + '%'; marker.style.top = top * 100 + '%';
+      marker.style.width = Math.max(0, clamp((r.width - V.x) / w, 0, 1) - left) * 100 + '%';
+      marker.style.height = Math.max(0, clamp((r.height - V.y) / h, 0, 1) - top) * 100 + '%';
+    }
   }
 
   function step() {
@@ -736,7 +784,7 @@
   }
 
   function zoomTo(ns, cx, cy) {
-    ns = clamp(ns, 1, 32);
+    ns = clamp(ns, 1, Math.max(32, T.natW / V.w));
     const k = ns / V.ts;
     V.tx = cx - (cx - V.tx) * k;
     V.ty = cy - (cy - V.ty) * k;
@@ -745,7 +793,7 @@
     kick();
     if (ns > 1 && statusEl.classList.contains('hint')) hideStatus();
   }
-  function zoomCenter(f) { const r = viewport.getBoundingClientRect(); zoomTo(V.ts * f, r.width / 2, (r.height - 56) / 2); }
+  function zoomCenter(f) { const r = viewport.getBoundingClientRect(); zoomTo(V.ts * f, r.width / 2, r.height / 2); }
 
   viewport.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -761,6 +809,10 @@
   $('#zoomIn').addEventListener('click', () => zoomCenter(1.6));
   $('#zoomOut').addEventListener('click', () => zoomCenter(1 / 1.6));
   $('#zoomFit').addEventListener('click', () => zoomTo(1, 0, 0));
+  $('#zoomActual').addEventListener('click', () => {
+    const r = viewport.getBoundingClientRect(); zoomTo(T.natW / V.w, r.width / 2, r.height / 2);
+  });
+  $('#navigator').addEventListener('click', () => zoomTo(1, 0, 0));
 
   let drag = null;
   const touches = new Map();
@@ -944,7 +996,7 @@
     setSvgInput(s.svg, s.name);
   });
   $('#useTraced').addEventListener('click', () => {
-    if (!T.result) return;
+    if (!T.result || !T.exportReady) return;
     $('#compName').value = SVG2Code.pascal(T.name);
     setSvgInput(exportSvg());
   });
