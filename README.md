@@ -27,7 +27,7 @@ Most "PNG to SVG" sites upload your image to a server, wrap the result in a payw
 ### Image to SVG
 
 - **Drop, paste or pick** any PNG, JPG, WebP or GIF. <kbd>Ctrl</kbd> <kbd>V</kbd> works from anywhere on the page.
-- **Presets** for logos, illustrations, compact photos, line art, and detailed images. Complex images automatically use Detailed: 64 colors, fine curves, and minimal cleanup.
+- **Presets** for logos, illustrations, compact photos, line art, and detailed images. Complex and shaded grayscale images automatically use Detailed: 64 colors, fine curves, and no structural cleanup.
 - **Live controls** for up to 128 colors, detail, smoothness, noise and edge-aware denoising. Fast, Balanced and Fine resolutions work up to 900, 1400 and 2200 px, within a four-million-pixel ceiling. Every change re-traces off the main thread.
 - **Focused workspace** with an image header, canvas background choices, Adjust and Palette tabs, an always-visible desktop export area, and a keyboard shortcuts dialog. Advanced cleanup stays out of the way until needed.
 - **Transparency** stays translucent through a vector luminance mask applied once to the composed layers. No embedded bitmap.
@@ -72,10 +72,10 @@ Measured against revision `b36b29a` on the same inputs, working sizes, and Chrom
 
 | Photo | Previous Photo preset | Detailed preset | Error reduction | Detailed SVG size |
 | --- | --- | --- | --- | --- |
-| Dog | 19.75 | **5.31** | 73% | 4.26 MB |
-| Landscape | 14.24 | **5.76** | 60% | 3.65 MB |
+| Dog | 19.75 | **4.64** | 77% | 6.17 MB |
+| Landscape | 14.24 | **5.36** | 62% | 4.60 MB |
 
-Detailed prioritizes fidelity and can produce multi-megabyte SVGs with hundreds of thousands of nodes. Photo retains compact, simplified output. More colors do not guarantee a better result for every image.
+Detailed preserves tiny shaded regions by disabling despeckling and soft-region merging. It prioritizes fidelity and can produce multi-megabyte SVGs with hundreds of thousands of nodes. Photo retains compact, simplified output. More colors do not guarantee a better result for every image.
 
 | Existing fixture | Before RMSE | Current default RMSE |
 | --- | --- | --- |
@@ -126,6 +126,8 @@ const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colo
 `trace()` accepts an unsigned RGBA byte array (`Uint8Array`, `Uint8ClampedArray`, or Node `Buffer`) with integer dimensions and at most 4,000,000 pixels. Invalid inputs and nonfinite numeric options throw descriptive errors. Numeric options are bounded before processing. Tiny components are retained when noise filtering is disabled.
 
 `result.alpha` contains vector opacity-mask paths; `result.stats.alphaNodes` counts their nodes. `toSVG(result, { idPrefix: 'my-icon-' })` lets you avoid definition ID collisions when embedding several generated SVGs in one document. Opacity uses exact levels when there are at most 16 and quantizes richer alpha to at most 16 bands. Highly textured transparency is rejected once its mask boundaries exceed 500,000 edges, before contour allocation; lower the resolution or flatten that image first.
+
+Grayscale alone does not imply line art. Automatic selection uses Line art only for genuinely two-tone grayscale input; shaded grayscale artwork uses Detailed. The manual Line art preset intentionally reduces the image to two colors.
 
 ### Limits
 

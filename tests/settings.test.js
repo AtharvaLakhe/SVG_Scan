@@ -35,3 +35,29 @@ test('detailed preset keeps texture without forced blur or majority filtering', 
 test('sizing rejects invalid image dimensions', () => {
   for (const [w,h] of [[0,100],[NaN,10],[-1,10],[10,Infinity]]) assert.throws(() => settings.workingSize(w,h), /dimension/i);
 });
+
+function pixels(width,height,at) {
+  const data=new Uint8ClampedArray(width*height*4);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)data.set(at(x,y),(y*width+x)*4);
+  return {width,height,data};
+}
+
+test('a dark background does not hide the tonal detail in grayscale artwork',()=>{
+  const source=pixels(200,200,(x,y)=>{
+    const v=x>=90&&x<110&&y>=90&&y<110 ? 10+(x+y*7)%170 : 0;
+    return [v,v,v,255];
+  });
+  assert.equal(settings.guessPreset(source),'detailed');
+});
+
+test('genuine two-tone line art still receives the compact line-art preset',()=>{
+  assert.equal(settings.guessPreset(pixels(80,60,x=>x<40?[0,0,0,255]:[255,255,255,255])),'lineart');
+});
+
+test('three distinct gray fills are kept instead of being forced into two colors',()=>{
+  assert.equal(settings.guessPreset(pixels(90,60,x=>{const v=x<30?0:x<60?128:255;return [v,v,v,255];})),'logo');
+});
+
+test('grayscale photographs with a full tonal range receive Detailed',()=>{
+  assert.equal(settings.guessPreset(pixels(256,32,x=>[x,x,x,255])),'detailed');
+});

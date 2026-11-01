@@ -59,3 +59,21 @@ test('a textured photo automatically selects Detailed even with a muted palette'
   await expect(page.locator('#colors')).toHaveValue('64');
   await expect(page.locator('[data-preset="detailed"]')).toHaveAttribute('aria-pressed','true');
 });
+
+test('shaded grayscale artwork is not reduced to two-color line art',async({page})=>{
+  await page.evaluate(async()=>{
+    const c=document.createElement('canvas');c.width=256;c.height=192;
+    const g=c.getContext('2d');g.fillStyle='#000';g.fillRect(0,0,256,192);
+    for(let y=40;y<150;y++)for(let x=70;x<180;x++){
+      const v=20+(x*7+y*3)%160;
+      g.fillStyle=`rgb(${v},${v},${v})`;g.fillRect(x,y,1,1);
+    }
+    const blob=await new Promise(resolve=>c.toBlob(resolve,'image/png'));
+    const files=new DataTransfer();files.items.add(new File([blob],'shaded-grayscale.png',{type:'image/png'}));
+    const input=document.querySelector('#fileInput');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  await expect(page.locator('[data-preset="detailed"]')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#colors')).toHaveValue('64');
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  expect(await page.locator('#vector .trace-layer').count()).toBeGreaterThan(8);
+});

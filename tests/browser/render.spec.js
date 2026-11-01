@@ -47,3 +47,25 @@ test('transparent holes and a one-pixel accent survive SVG rendering',async({pag
   expect(samples.accent[0]).toBe(255);
   expect(samples.accent[1]).toBeLessThan(100);
 });
+
+test('Detailed preserves isolated shaded marks in a large grayscale image',async({page})=>{
+  const rmse=await page.evaluate(async()=>{
+    const width=1000,height=1000,data=new Uint8ClampedArray(width*height*4);
+    for(let i=0;i<width*height;i++)data[i*4+3]=255;
+    let seed=7;
+    for(let y=400;y<600;y++)for(let x=400;x<600;x++){
+      if(x%3 || y%3) continue;
+      seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+      const v=32+((seed>>>24)%16)*8;data.set([v,v,v,255],(y*width+x)*4);
+    }
+    const source={width,height,data};
+    const options=SVGScanSettings.engineOptions(SVGScanSettings.presets.detailed,source);
+    const out=await rasterize(SVGScan.toSVG(SVGScan.trace(source,options)),width,height);
+    let sse=0;
+    for(let y=400;y<600;y++)for(let x=400;x<600;x++){
+      const j=(y*width+x)*4,e=data[j]-out.data[j];sse+=e*e;
+    }
+    return Math.sqrt(sse/40000);
+  });
+  expect(rmse).toBeLessThan(10);
+});

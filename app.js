@@ -189,37 +189,19 @@
     Object.keys(sliders).forEach((k) => { sliders[k].value = p[k]; paintSlider(sliders[k]); });
     T.blur = p.blur;
     T.majority = p.majority;
+    T.merge = p.merge;
     T.dehalo = p.dehalo;
-    const notes = { logo: 'Crisp shapes and a small, focused palette.', illustration: 'Balanced curves for colorful artwork.', photo: 'A compact, simplified take on your photo.', lineart: 'Clean contours for ink, sketches, and lettering.', detailed: 'Fine textures, small features, and richer color. Larger SVGs.' };
+    const notes = { logo: 'Crisp shapes and a small, focused palette.', illustration: 'Balanced curves for colorful artwork.', photo: 'A compact, simplified take on your photo.', lineart: 'Two-color contours. Choose Detailed to keep shading.', detailed: 'Fine textures, small features, and richer color. Larger SVGs.' };
     $('#presetNote').textContent = notes[name];
     $$('#presets .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.preset === name));
     if (run) requestTrace(false);
   }
 
-  function guessPreset(img) {
-    const d = img.data, n = img.width * img.height, step = Math.max(1, Math.floor(n / 20000));
-    const seen = new Set(), fine = new Set();
-    let gray = 0, opaque = 0;
-    for (let i = 0; i < n; i += step) {
-      const j = i * 4;
-      if (d[j + 3] < 128) continue;
-      opaque++;
-      seen.add((d[j] >> 3) << 10 | (d[j + 1] >> 3) << 5 | (d[j + 2] >> 3));
-      fine.add((d[j] << 16) | (d[j + 1] << 8) | d[j + 2]);
-      if (Math.abs(d[j] - d[j + 1]) < 14 && Math.abs(d[j + 1] - d[j + 2]) < 14) gray++;
-    }
-    // Muted photos can share few coarse colors while containing thousands of
-    // subtle tones. Don't mistake their texture for flat illustration fills.
-    if (fine.size > 4000) return 'detailed';
-    if (opaque && gray / opaque > 0.97 && seen.size < 60) return 'lineart';
-    if (seen.size <= 40) return 'logo';
-    if (seen.size < 900) return 'illustration';
-    return 'detailed';
-  }
+  function guessPreset(img) { return SVGScanSettings.guessPreset(img); }
 
   function engineOpts() {
     const settings = Object.fromEntries(Object.entries(sliders).map(([key, input]) => [key, +input.value]));
-    return SVGScanSettings.engineOptions({ ...settings, blur: T.blur, majority: T.majority, dehalo: T.dehalo, gradients: $('#optGradients').checked }, T.data);
+    return SVGScanSettings.engineOptions({ ...settings, blur: T.blur, majority: T.majority, merge: T.merge, dehalo: T.dehalo, gradients: $('#optGradients').checked }, T.data);
   }
 
   /* ---------- loading ---------- */
