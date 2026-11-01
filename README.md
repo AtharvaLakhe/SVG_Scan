@@ -16,9 +16,9 @@ Runs entirely in your browser. No uploads, no sign-up, no runtime dependencies.
 
 </div>
 
-<p align="center"><a href="https://atharvalakhe.github.io/SVG_Scan/"><img src="assets/studio-preview.png" alt="Current SVG Scan studio: watermelon original and vector comparison on a pale canvas, six trace presets, Fine resolution, palette controls, and SVG export actions" width="1200"></a></p>
+<p align="center"><a href="https://atharvalakhe.github.io/SVG_Scan/"><img src="assets/studio-demo.gif" alt="Animated SVG Scan demo tracing a complex celestial botanical poster, sweeping the original and vector comparison, zooming into detail, inspecting outlines, and exploring its palette" width="1200"></a></p>
 
-<p align="center"><sub>The current vector studio, with automatic Detailed tracing and Fine resolution.</sub></p>
+<p align="center"><sub>A complex poster with gradient shading, fine orbital lines, typography, and botanical layers, traced in the current studio. The loop shows tracing, comparison, zoom, outlines, and palette controls.</sub></p>
 
 ## Why
 
