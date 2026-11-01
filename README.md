@@ -27,11 +27,14 @@ Most "PNG to SVG" sites upload your image to a server, wrap the result in a payw
 ### Image to SVG
 
 - **Drop, paste or pick** any PNG, JPG, WebP or GIF. <kbd>Ctrl</kbd> <kbd>V</kbd> works from anywhere on the page.
-- **Presets** for logos, illustrations, photos and line art, auto-picked from the image's colors.
-- **Live sliders** for colors, detail, smoothness and noise. Every change re-traces off the main thread.
+- **Presets** for logos, illustrations, compact photos, line art, and detailed images. Complex images automatically use Detailed: 64 colors, fine curves, and minimal cleanup.
+- **Live controls** for up to 128 colors, detail, smoothness, noise and edge-aware denoising. Fast, Balanced and Fine resolutions work up to 900, 1400 and 2200 px, within a four-million-pixel ceiling. Every change re-traces off the main thread.
+- **Focused workspace** with an image header, canvas background choices, Adjust and Palette tabs, an always-visible desktop export area, and a keyboard shortcuts dialog. Advanced cleanup stays out of the way until needed.
+- **Transparency** stays translucent through a vector luminance mask applied once to the composed layers. No embedded bitmap.
+- **Cancel and replace** long traces; results from old images and settings are discarded.
 - **Smooth gradients**: shaded areas come out as real `<linearGradient>` and `<radialGradient>` fills (with focal points for lit 3D shapes) instead of stepped bands. Toggle it to see the difference.
 - **Compare, Vector and Outline views**, with a drag-to-compare slider and zoom up to 3200%. The original pixelates, the vector stays sharp.
-- **Drop a color** from the palette to delete it from the export. Click the background swatch and you've removed the background.
+- **Drop a color** from the Palette tab to leave that layer out of the export, then restore all colors in one click. With stacked layers, removing a foreground color reveals the layers underneath.
 - **Real stats**: path count, node count, file size, trace time.
 
 ### SVG to code
@@ -52,7 +55,7 @@ Toggle **TypeScript**, switch every color to **`currentColor`** for icon sets, o
 
 ## How the tracer works
 
-All of it lives in [`tracer.js`](tracer.js), about 1,000 lines with no dependencies.
+The engine lives in [`tracer.js`](tracer.js), with no runtime dependencies. Shared app presets and resolution limits live in [`trace-settings.js`](trace-settings.js).
 
 1. **Quantize.** k-means++ picks a palette in the [OKLab](https://bottosson.github.io/posts/oklab/) color space, so clusters spread evenly over what the eye can tell apart, then every pixel snaps to its nearest color. Flat images with few colors skip clustering and keep their exact colors.
 2. **Clean.** Anti-aliased edges leave thin bands of in-between color (orange next to black makes a brown outline). A pixel at most 3 px thick whose color sits between its two neighbours' colors folds back into the closer one; real thin lines survive because they aren't blends. A 3×3 majority filter smooths dithered band edges and specks below the noise threshold merge into their neighbour.
@@ -63,20 +66,25 @@ All of it lives in [`tracer.js`](tracer.js), about 1,000 lines with no dependenc
 
 Path data is written with relative commands computed between already-rounded points (so rounding never drifts), implicit command repetition, and the fewest separators the SVG grammar allows.
 
-### Benchmarks
+### Measured quality
 
-Each version with its own default presets, traced at the app's working resolution. Error is RMSE between the source and the rendered SVG (0–255, lower is better).
+Measured against revision `b36b29a` on the same inputs, working sizes, and Chromium version. Error is RGB RMSE (0–255), composited on white; lower is better. Full measurements, dimensions, sizes, nodes and timings are in [`tests/benchmark/results.json`](tests/benchmark/results.json). Timings depend on the machine and browser.
 
-| Image | First release | Now | Error |
-| --- | --- | --- | --- |
-| Fox emoji | 192 KB, 10,739 nodes | **27 KB**, 1,085 nodes | 6.86 → **5.70** |
-| Rocket emoji | 91 KB, 4,997 nodes | **14 KB**, 393 nodes | 6.88 → **5.25** |
-| Watermelon emoji | 64 KB, 3,345 nodes | **10 KB**, 350 nodes | 7.21 → **5.16** |
-| Shaded sphere | 59 KB, 3,945 nodes | **3.6 KB**, 125 nodes | 5.63 → **5.38** |
-| Gradient sunset | 97 KB, 12,342 nodes | **5.3 KB**, 168 nodes | 5.96 → **2.94** |
-| Flat logo with text | 16 KB, 972 nodes | **2.5 KB**, 113 nodes | 10.30 → **7.66** |
-| Line art | 14 KB, 794 nodes | **3.7 KB**, 150 nodes | 7.66 → **7.38** |
-| Landscape photo | 927 KB, 54,460 nodes | **131 KB**, 6,946 nodes | 17.11 → **14.26** |
+| Photo | Previous Photo preset | Detailed preset | Error reduction | Detailed SVG size |
+| --- | --- | --- | --- | --- |
+| Dog | 19.75 | **5.31** | 73% | 4.26 MB |
+| Landscape | 14.24 | **5.76** | 60% | 3.65 MB |
+
+Detailed prioritizes fidelity and can produce multi-megabyte SVGs with hundreds of thousands of nodes. Photo retains compact, simplified output. More colors do not guarantee a better result for every image.
+
+| Existing fixture | Before RMSE | Current default RMSE |
+| --- | --- | --- |
+| Fox emoji | 5.87 | 5.07 |
+| Rocket emoji | 5.29 | 4.51 |
+| Flat logo and text | 7.89 | 7.89 |
+| Line art | 7.18 | 7.18 |
+| Shaded sphere | 4.65 | 4.65 |
+| Gradient sunset | 3.36 | 3.36 |
 
 ## Use the engine in your own project
 
@@ -102,7 +110,7 @@ const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colo
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `colors` | `8` | Palette size (2 to 64) |
+| `colors` | `8` | Palette size (2 to 256 in the engine; up to 128 in the UI) |
 | `tolerance` | `1` | Max distance, in pixels, a fitted curve may stray from the traced edge |
 | `smoothness` | `1` | `0` gives polygons; higher values smooth pixel noise harder before fitting |
 | `corner` | `60` | Turns sharper than this many degrees stay corners |
@@ -111,8 +119,20 @@ const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colo
 | `dehalo` | `true` | Fold anti-aliasing halos back into the colors they blend |
 | `gradients` | `true` | Give shaded regions a linear or radial gradient instead of a flat fill |
 | `merge` | `6` | Merge regions across soft borders while one gradient still fits within this RMS error (0–255) |
-| `blur` | `0` | Box blur radius applied before quantizing |
+| `blur` | `0` | Box blur radius (0–8), using premultiplied colors while retaining original opacity |
+| `denoise` | `0` | Edge-aware smoothing strength (0–100); contrasting fine edges survive |
 | `precision` | `1` | Decimals in the path data |
+
+`trace()` accepts an unsigned RGBA byte array (`Uint8Array`, `Uint8ClampedArray`, or Node `Buffer`) with integer dimensions and at most 4,000,000 pixels. Invalid inputs and nonfinite numeric options throw descriptive errors. Numeric options are bounded before processing. Tiny components are retained when noise filtering is disabled.
+
+`result.alpha` contains vector opacity-mask paths; `result.stats.alphaNodes` counts their nodes. `toSVG(result, { idPrefix: 'my-icon-' })` lets you avoid definition ID collisions when embedding several generated SVGs in one document. Opacity uses exact levels when there are at most 16 and quantizes richer alpha to at most 16 bands. Highly textured transparency is rejected once its mask boundaries exceed 500,000 edges, before contour allocation; lower the resolution or flatten that image first.
+
+### Limits
+
+- Tracing reconstructs visible shapes and colors, not the original editable scene, objects, text, or font. Fine photo textures need many vector nodes.
+- Gradients still fit one shading model per palette layer; disconnected objects sharing that palette entry can have different shading that one model cannot capture.
+- Opacity masks work in SVG, React, React Native and Vue output. Android VectorDrawable cannot represent these masks; conversion reports this instead of silently exporting an opaque image.
+- File decoding uses the browser's image support. If Web Workers are unavailable, tracing falls back to the main thread; the interface can pause during that synchronous fallback.
 
 ## Run it locally
 
@@ -131,7 +151,23 @@ npx serve .        # or: python -m http.server
 | <kbd>Ctrl</kbd> <kbd>V</kbd> | Paste an image to trace, or SVG markup to convert |
 | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> | Compare, Vector, Outline view |
 | <kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd> | Zoom in, zoom out, fit |
+| <kbd>?</kbd> | Open keyboard shortcuts |
 | Double-click | Zoom to 400% at that point, or back to fit |
+
+## Development checks
+
+The app still has no build step or runtime packages. Automated checks require Node 20+ and development-only Playwright:
+
+```bash
+npm ci
+npx playwright install chromium
+npm test
+npm run test:browser
+```
+
+The browser tests start a local static server automatically, or reuse a server on port 8765. They exercise real workers, cancellation, replacement, fallback, pixel-level opacity and hole rendering, code conversion, mobile layout and keyboard operation.
+
+For the visual benchmark, serve the repo and open `tests/benchmark/bench.html`, then run `runBench()` in its console, or run `node tests/benchmark/measure.js`. Use `runBench(['dog', 'mountain'], {preset: 'detailed'})` to compare quality. To reproduce the previous revision too, save `git show b36b29a:tracer.js` to `.playwright-mcp/baseline-tracer.js` before running the measurement script.
 
 ## Roadmap
 

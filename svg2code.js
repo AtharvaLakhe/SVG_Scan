@@ -76,6 +76,10 @@
     if (!get(tree, 'viewBox')) set(tree, 'viewBox', d.vb.join(' '));
     if (!get(tree, 'xmlns')) tree.attrs.unshift(['xmlns', 'http://www.w3.org/2000/svg']);
     var usesXlink = false;
+    // Luminance masks encode opacity as paint. Recolor the artwork, while
+    // retaining those grayscale values (including nested mask groups).
+    var maskNodes = new WeakSet();
+    walk(tree, function (n) { if (n.name === 'mask') walk(n, function (m) { maskNodes.add(m); }); });
     walk(tree, function (n) {
       n.attrs = n.attrs.map(function (a) {
         var k = a[0], v = a[1];
@@ -87,7 +91,7 @@
         else if (k === 'style') v = stringifyStyle(parseStyle(v));
         return [k, v];
       }).filter(function (a) { return a[1] !== '' || a[0] === 'd'; });
-      if (currentColor) recolor(n);
+      if (currentColor && !maskNodes.has(n)) recolor(n);
       n.children = unwrap(n.children);
     });
     // Editor-generated ids (defs2, path817...) nothing points at are dead weight.
@@ -561,6 +565,9 @@
     var o = Object.assign({ name: 'Icon', ts: true, currentColor: false, precision: 'auto' }, opts);
     o.name = pascal(o.name);
     var tree = parse(text);
+    if (format === 'android') walk(tree, function (n) {
+      if (n.name === 'mask') throw new Error('Android VectorDrawable cannot preserve SVG transparency masks. Export SVG, React, React Native, or Vue instead.');
+    });
     o.precision = o.precision === 'auto' ? autoPrecision(tree) : +o.precision;
     optimize(tree, o.precision, o.currentColor);
     var res = (FORMATS[format] || FORMATS.svg)(tree, o);

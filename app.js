@@ -168,20 +168,15 @@
 
   const stage = $('#stage'), empty = $('#empty'), viewport = $('#viewport'), frame = $('#frame');
   const raster = $('#raster'), vector = $('#vector'), stageBar = $('#stageBar'), statusEl = $('#status');
-  const sliders = { colors: $('#colors'), detail: $('#detail'), smooth: $('#smooth'), noise: $('#noise') };
+  const sliders = { colors: $('#colors'), detail: $('#detail'), smooth: $('#smooth'), noise: $('#noise'), denoise: $('#denoise') };
 
   const T = {
-    name: 'image', url: null, natW: 0, natH: 0, data: null, result: null, blur: 0,
-    hidden: new Set(), view: 'compare', split: 50, busy: false, pending: null, jobId: 0,
+    name: 'image', url: null, natW: 0, natH: 0, source: null, data: null, result: null, blur: 0, loadId: 0,
+    hidden: new Set(), view: 'compare', split: 50, busy: false, jobId: 0,
     first: true, started: 0, reveal: false
   };
 
-  const PRESETS = {
-    logo: { colors: 6, detail: 72, smooth: 55, noise: 22, blur: 0, majority: 0 },
-    illustration: { colors: 14, detail: 60, smooth: 72, noise: 30, blur: 1, majority: 2 },
-    photo: { colors: 20, detail: 45, smooth: 80, noise: 50, blur: 2, majority: 3 },
-    lineart: { colors: 2, detail: 75, smooth: 62, noise: 26, blur: 0, majority: 0 }
-  };
+  const PRESETS = SVGScanSettings.presets;
 
   function paintSlider(input) {
     const p = (input.value - input.min) / (input.max - input.min) * 100;
@@ -194,42 +189,37 @@
     Object.keys(sliders).forEach((k) => { sliders[k].value = p[k]; paintSlider(sliders[k]); });
     T.blur = p.blur;
     T.majority = p.majority;
+    T.dehalo = p.dehalo;
+    const notes = { logo: 'Crisp shapes and a small, focused palette.', illustration: 'Balanced curves for colorful artwork.', photo: 'A compact, simplified take on your photo.', lineart: 'Clean contours for ink, sketches, and lettering.', detailed: 'Fine textures, small features, and richer color. Larger SVGs.' };
+    $('#presetNote').textContent = notes[name];
     $$('#presets .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.preset === name));
     if (run) requestTrace(false);
   }
 
   function guessPreset(img) {
     const d = img.data, n = img.width * img.height, step = Math.max(1, Math.floor(n / 20000));
-    const seen = new Set();
+    const seen = new Set(), fine = new Set();
     let gray = 0, opaque = 0;
     for (let i = 0; i < n; i += step) {
       const j = i * 4;
       if (d[j + 3] < 128) continue;
       opaque++;
       seen.add((d[j] >> 3) << 10 | (d[j + 1] >> 3) << 5 | (d[j + 2] >> 3));
+      fine.add((d[j] << 16) | (d[j + 1] << 8) | d[j + 2]);
       if (Math.abs(d[j] - d[j + 1]) < 14 && Math.abs(d[j + 1] - d[j + 2]) < 14) gray++;
     }
+    // Muted photos can share few coarse colors while containing thousands of
+    // subtle tones. Don't mistake their texture for flat illustration fills.
+    if (fine.size > 4000) return 'detailed';
     if (opaque && gray / opaque > 0.97 && seen.size < 60) return 'lineart';
     if (seen.size <= 40) return 'logo';
     if (seen.size < 900) return 'illustration';
-    return 'photo';
+    return 'detailed';
   }
 
   function engineOpts() {
-    const d = +sliders.detail.value, s = +sliders.smooth.value, n = +sliders.noise.value;
-    const mp = T.data.width * T.data.height / 1e6;
-    return {
-      colors: +sliders.colors.value,
-      tolerance: 0.25 + Math.pow(1 - d / 100, 1.5) * 3.2,
-      smoothness: s / 100 * 1.3,
-      corner: 42 + s * 0.28,
-      noise: Math.max(1, Math.round(n * n / 12 * mp)),
-      blur: T.blur,
-      majority: T.majority,
-      gradients: $('#optGradients').checked,
-      merge: 6,
-      precision: 1
-    };
+    const settings = Object.fromEntries(Object.entries(sliders).map(([key, input]) => [key, +input.value]));
+    return SVGScanSettings.engineOptions({ ...settings, blur: T.blur, majority: T.majority, dehalo: T.dehalo, gradients: $('#optGradients').checked }, T.data);
   }
 
   /* ---------- loading ---------- */
@@ -237,50 +227,81 @@
   async function loadFile(file, name) {
     if (!file) return;
     if (/svg/.test(file.type) || /\.svg$/i.test(file.name || '')) {
+      const loadId = ++T.loadId;
+      stopTrace();
+      const text = await file.text();
+      if (loadId !== T.loadId) return;
       setMode('code');
-      setSvgInput(await file.text(), file.name);
+      setSvgInput(text, file.name);
       return;
     }
     if (!/^image\//.test(file.type)) {
       toast("That file isn't an image. Try a PNG, JPG or WebP.");
       return;
     }
+    const loadId = beginImageLoad();
     const url = URL.createObjectURL(file);
     try {
-      await loadImage(url, name || baseName(file.name));
+      await loadImage(url, name || baseName(file.name), loadId);
     } catch (e) {
       URL.revokeObjectURL(url);
       toast("This browser can't read that image. Try a PNG, JPG or WebP.");
     }
   }
 
-  async function loadImage(url, name) {
+  function beginImageLoad() {
+    const loadId = ++T.loadId;
+    stopTrace();
+    T.result = null; T.data = null; T.source = null;
+    T.hidden.clear();
+    vector.innerHTML = '';
+    $('#swatches').innerHTML = '<p class="muted">Reading the new image…</p>';
+    $('#paletteCount').textContent = '0';
+    $('#paletteStatus').textContent = 'The palette will appear when this trace is ready.';
+    $('#restoreColors').disabled = true;
+    ['#stPaths', '#stNodes', '#stSize', '#stTime'].forEach((id) => {
+      const element = $(id); cancelAnimationFrame(element._raf); element.dataset.v = 0;
+      element.textContent = id === '#stSize' ? '0 KB' : id === '#stTime' ? '0 ms' : '0';
+    });
+    setExportEnabled(false);
+    setTraceState('Reading image', 'busy');
+    return loadId;
+  }
+
+  async function loadImage(url, name, loadId) {
+    if (loadId !== T.loadId) { URL.revokeObjectURL(url); return; }
     const img = new Image();
     img.src = url;
-    await img.decode();
+    try { await img.decode(); } catch (error) { URL.revokeObjectURL(url); if (loadId === T.loadId) setTraceState('Cannot read image', 'error'); throw error; }
+    if (loadId !== T.loadId) { URL.revokeObjectURL(url); return; }
     if (T.url) URL.revokeObjectURL(T.url);
     setMode('trace');
     T.url = url; T.name = name || 'image';
     T.natW = img.naturalWidth; T.natH = img.naturalHeight;
+    $('#imageName').textContent = T.name;
+    $('#imageName').title = T.name;
+    $('#imageMeta').textContent = T.natW + ' × ' + T.natH + ' px';
+    T.source = img;
+    prepareImage();
 
-    // Small images trace better upscaled; huge ones gain nothing past ~1400px.
-    const long = Math.max(T.natW, T.natH);
-    const scale = long < 900 ? Math.min(4, 900 / long) : long > 1400 ? 1400 / long : 1;
-    const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(T.natW * scale));
-    c.height = Math.max(1, Math.round(T.natH * scale));
-    const g = c.getContext('2d', { willReadFrequently: true });
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(img, 0, 0, c.width, c.height);
-    T.data = g.getImageData(0, 0, c.width, c.height);
-
-    T.result = null; T.first = true; T.hidden.clear();
+    T.first = true; T.hidden.clear();
     vector.innerHTML = '';
     raster.src = url;
     showWorkspace();
     setView('vector');
     applyPreset(guessPreset(T.data), false);
     requestTrace(true);
+  }
+
+  function prepareImage() {
+    const size = SVGScanSettings.workingSize(T.natW, T.natH, $('#quality').value);
+    const c = document.createElement('canvas');
+    c.width = size.width; c.height = size.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(T.source, 0, 0, c.width, c.height);
+    T.data = g.getImageData(0, 0, c.width, c.height);
+    $('#workingSize').textContent = c.width + ' × ' + c.height + ' working pixels · ' + T.natW + ' × ' + T.natH + ' original';
   }
 
   function showWorkspace() {
@@ -365,10 +386,12 @@
 
   const EMOJI_NAMES = { '🦊': 'fox', '🍉': 'watermelon', '🚀': 'rocket', '🌻': 'sunflower' };
   $$('.sample').forEach((b) => b.addEventListener('click', async () => {
+    const loadId = beginImageLoad();
     const key = b.dataset.sample;
     const canvas = key === 'sunset' ? sunsetSample() : emojiSample(key);
     const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
-    await loadImage(URL.createObjectURL(blob), key === 'sunset' ? 'sunset' : EMOJI_NAMES[key] || 'sample');
+    if (loadId !== T.loadId) return;
+    await loadImage(URL.createObjectURL(blob), key === 'sunset' ? 'sunset' : EMOJI_NAMES[key] || 'sample', loadId);
   }));
 
   ['#fileInput', '#fileInput2'].forEach((id) => {
@@ -386,16 +409,20 @@
       worker.onerror = (e) => {
         if (e.preventDefault) e.preventDefault();
         worker.terminate(); worker = null; mainThread = true;
-        if (T.busy) { T.busy = false; requestTrace(T.reveal); }
+        if (T.busy) { const reveal = T.reveal; stopTrace(); requestTrace(reveal); }
       };
     } catch (e) { mainThread = true; }
   }
 
   function requestTrace(reveal) {
     if (!T.data) return;
-    if (T.busy) { T.pending = { reveal: reveal || (T.pending && T.pending.reveal) }; return; }
+    if (T.busy) { reveal = reveal || T.reveal; stopTrace(); }
     T.busy = true; T.reveal = reveal; T.started = performance.now();
+    setTraceState('Tracing', 'busy');
+    stage.setAttribute('aria-busy', 'true');
     const id = ++T.jobId, opts = engineOpts();
+    const data = T.data;
+    $('#cancelTrace').hidden = false;
     clearTimeout(T.busyTimer);
     T.busyTimer = setTimeout(() => setBusy(true), reveal ? 0 : 180);
     ensureWorker();
@@ -404,7 +431,8 @@
       worker.postMessage({ id, width: T.data.width, height: T.data.height, buffer: copy.buffer, opts }, [copy.buffer]);
     } else {
       setTimeout(() => {
-        try { onMessage({ id, type: 'done', result: SVGScan.trace(T.data, opts) }); }
+        if (id !== T.jobId || !T.busy) return;
+        try { onMessage({ id, type: 'done', result: SVGScan.trace(data, opts) }); }
         catch (err) { onMessage({ id, type: 'error', message: err.message }); }
       }, 60);
     }
@@ -418,11 +446,35 @@
       const wait = 1100 - (performance.now() - T.started);
       if (wait > 0) { setProgress(0.96, 'Fitting curves'); await sleep(wait); }
     }
+    if (m.id !== T.jobId || !T.busy) return;
     T.busy = false;
+    $('#cancelTrace').hidden = true;
     clearTimeout(T.busyTimer);
-    if (m.type === 'error') { setBusy(false); toast('Tracing stopped: ' + esc(m.message)); }
+    stage.setAttribute('aria-busy', 'false');
+    if (m.type === 'error') { setBusy(false); setTraceState('Trace stopped', 'error'); toast('Tracing stopped: ' + esc(m.message)); }
     else onResult(m.result, T.reveal);
-    if (T.pending) { const p = T.pending; T.pending = null; requestTrace(p.reveal); }
+  }
+
+  function stopTrace() {
+    ++T.jobId;
+    clearTimeout(traceTimer); clearTimeout(T.busyTimer); clearTimeout(T.revealTimer);
+    if (T.busy && worker) { worker.terminate(); worker = null; }
+    T.busy = false;
+    stage.setAttribute('aria-busy', 'false');
+    $('#cancelTrace').hidden = true;
+    vector.classList.remove('draw', 'wipe');
+    setBusy(false);
+  }
+
+  function setExportEnabled(enabled) {
+    ['#download', '#copySvg', '#toCode'].forEach((id) => { $(id).disabled = !enabled; });
+    $('#useTraced').hidden = !enabled;
+    if (!enabled) $('#exportHint').textContent = 'Your SVG will be ready here.';
+  }
+
+  function setTraceState(label, state) {
+    $('#traceState').textContent = label;
+    $('#traceState').dataset.state = state;
   }
 
   let statusTimer = 0;
@@ -447,28 +499,31 @@
 
   function onResult(res, reveal) {
     T.result = res;
+    setTraceState(res.layers.length ? 'Vector ready' : 'Empty image', 'done');
     setBusy(false);
     renderVector(reveal);
     applyView();
     renderSwatches(reveal);
     updateStats();
-    ['#download', '#copySvg', '#toCode'].forEach((id) => { $(id).disabled = false; });
+    setExportEnabled(true);
   }
 
   function renderVector(reveal) {
     const r = T.result;
     const how = !reveal || reduceMotion ? 'fresh' : r.stats.nodes < 14000 ? 'draw' : 'wipe';
     const hair = (Math.max(r.width, r.height) / 360).toFixed(2);
-    let html = '<svg viewBox="0 0 ' + r.width + ' ' + r.height + '" preserveAspectRatio="none" style="--hair:' + hair + 'px">', defs = '';
-    r.layers.forEach((l, i) => {
-      let fill = l.color;
-      if (l.gradient) { defs += SVGScan.gradientDef('sg' + i, l.gradient); fill = 'url(#sg' + i + ')'; }
-      html += '<path fill="' + fill + '" d="' + l.d + '"' + (how === 'draw' ? ' pathLength="1"' : '') +
-        ' style="--i:' + i + '"' + (T.hidden.has(l.color) ? ' class="off"' : '') + '/>';
-    });
-    if (defs) html = html.replace('>', '><defs>' + defs + '</defs>');
     vector.className = 'vector';
-    vector.innerHTML = html + '</svg>';
+    vector.innerHTML = SVGScan.toSVG(r, { idPrefix: 'preview-' });
+    const svg = vector.firstElementChild;
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.style.setProperty('--hair', hair + 'px');
+    const paths = svg.querySelectorAll(':scope > path, :scope > g > path');
+    paths.forEach((path, i) => {
+      path.classList.add('trace-layer');
+      path.classList.toggle('off', T.hidden.has(r.layers[i].color));
+      path.style.setProperty('--i', i);
+      if (how === 'draw') path.setAttribute('pathLength', '1');
+    });
     void vector.offsetWidth;
     vector.classList.add(how);
 
@@ -486,7 +541,8 @@
       if (T.first) {
         T.first = false;
         setView('compare');
-        setTimeout(() => showStatus(matchMedia('(pointer: coarse)').matches ? 'Pinch to zoom in. The vector stays sharp.' : 'Scroll to zoom in. The vector stays sharp.', true), 700);
+        const jobId = T.jobId;
+        setTimeout(() => { if (jobId === T.jobId && !T.busy) showStatus(matchMedia('(pointer: coarse)').matches ? 'Pinch to zoom in. The vector stays sharp.' : 'Scroll to zoom in. The vector stays sharp.', true); }, 700);
       }
     }, reduceMotion ? 0 : total);
   }
@@ -506,16 +562,24 @@
       b.title = (l.gradient ? l.gradient.from + ' to ' + l.gradient.to + ' gradient' : l.color) + ', covers ' + (pct < 1 ? '<1' : Math.round(pct)) + '% of the image';
       b.setAttribute('aria-label', 'Color ' + l.color + (T.hidden.has(l.color) ? ', dropped' : ''));
       b.addEventListener('click', () => {
+        if (!T.result) return;
         if (T.hidden.has(l.color)) T.hidden.delete(l.color); else T.hidden.add(l.color);
         const off = T.hidden.has(l.color);
         b.setAttribute('aria-pressed', !off);
         b.setAttribute('aria-label', 'Color ' + l.color + (off ? ', dropped' : ''));
-        const path = vector.querySelectorAll('path')[i];
-        if (path) path.classList.toggle('off', off);
+        vector.querySelectorAll('.trace-layer').forEach((path, j) => {
+          if (T.result.layers[j].color === l.color) path.classList.toggle('off', off);
+        });
+        box.querySelectorAll('.swatch').forEach((swatch, j) => {
+          if (T.result.layers[j].color !== l.color) return;
+          swatch.setAttribute('aria-pressed', !off);
+          swatch.setAttribute('aria-label', 'Color ' + l.color + (off ? ', dropped' : ''));
+        });
         updateStats();
       });
       box.appendChild(b);
     });
+    $('#paletteCount').textContent = T.result.layers.length;
   }
 
   function exportSvg() {
@@ -524,12 +588,15 @@
 
   function updateStats() {
     const visible = T.result.layers.filter((l) => !T.hidden.has(l.color));
-    const nodes = visible.reduce((a, l) => a + l.nodes, 0);
+    const nodes = visible.reduce((a, l) => a + l.nodes, T.result.stats.alphaNodes || 0);
     const size = new Blob([exportSvg()]).size;
-    tweenNumber($('#stPaths'), visible.length, (v) => Math.round(v));
+    tweenNumber($('#stPaths'), visible.length + (T.result.alpha || []).length, (v) => Math.round(v));
     tweenNumber($('#stNodes'), nodes, (v) => Math.round(v).toLocaleString());
     tweenNumber($('#stSize'), size, (v) => fmtBytes(Math.round(v)));
     tweenNumber($('#stTime'), T.result.stats.ms, (v) => Math.round(v) + ' ms');
+    $('#restoreColors').disabled = !T.hidden.size;
+    $('#paletteStatus').textContent = T.hidden.size ? T.hidden.size + ' colors left out. Restore them any time.' : T.result.layers.length + ' colors. Click a swatch to leave it out of your SVG.';
+    $('#exportHint').textContent = fmtBytes(size) + ' SVG' + (size > 1048576 ? ' · Lower colors for a smaller file' : ' · Editable vector paths');
   }
 
   /* ---------- controls ---------- */
@@ -540,12 +607,50 @@
     input.addEventListener('input', () => {
       paintSlider(input);
       $$('#presets .chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+      $('#presetNote').textContent = 'Your settings. Every change updates the vector.';
       clearTimeout(traceTimer);
       traceTimer = setTimeout(() => requestTrace(false), 110);
     });
   });
   $$('#presets .chip').forEach((c) => c.addEventListener('click', () => applyPreset(c.dataset.preset, true)));
   $('#optGradients').addEventListener('change', () => requestTrace(false));
+  $('#quality').addEventListener('change', () => {
+    if (!T.source) return;
+    stopTrace(); prepareImage(); requestTrace(false);
+  });
+  $('#cancelTrace').addEventListener('click', () => {
+    stopTrace(); setTraceState('Cancelled', 'idle'); showStatus('Trace cancelled. Change a setting to trace again.', true);
+  });
+  $('#resetSettings').addEventListener('click', () => applyPreset(T.data ? guessPreset(T.data) : 'illustration', true));
+  $('#restoreColors').addEventListener('click', () => {
+    if (!T.result) return;
+    T.hidden.clear(); renderVector(false); renderSwatches(false); updateStats();
+  });
+
+  const inspectorTabs = $$('.inspector-tabs [role="tab"]');
+  function selectInspector(tab) {
+    inspectorTabs.forEach((button) => {
+      const on = button === tab;
+      button.setAttribute('aria-selected', on); button.tabIndex = on ? 0 : -1;
+      $('#' + button.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+  inspectorTabs.forEach((tab) => tab.addEventListener('click', () => selectInspector(tab)));
+  $('.inspector-tabs').addEventListener('keydown', (e) => arrowNav(inspectorTabs, e, selectInspector));
+  $('#canvasBackground').value = store('svgscan-canvas') || 'grid';
+  function setCanvasBackground() {
+    ['grid', 'checker', 'paper', 'dark'].forEach((name) => stage.classList.toggle('bg-' + name, name === $('#canvasBackground').value));
+    store('svgscan-canvas', $('#canvasBackground').value);
+  }
+  $('#canvasBackground').addEventListener('change', setCanvasBackground);
+  setCanvasBackground();
+  const shortcutsDialog = $('#shortcutsDialog');
+  $('#openShortcuts').addEventListener('click', () => shortcutsDialog.showModal());
+  $('#closeShortcuts').addEventListener('click', () => shortcutsDialog.close());
+  shortcutsDialog.addEventListener('click', (e) => { if (e.target === shortcutsDialog) { const r = shortcutsDialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) shortcutsDialog.close(); } });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.target.closest('input, textarea, select') && !shortcutsDialog.open) { e.preventDefault(); shortcutsDialog.showModal(); }
+  });
 
   $('#download').addEventListener('click', () => {
     const name = T.name + '.svg';
@@ -931,6 +1036,14 @@
 
   /* ---------- boot ---------- */
 
+  $$('label').forEach((label) => {
+    const input = $('input[type="file"]', label);
+    if (!input) return;
+    label.setAttribute('role', 'button'); label.tabIndex = 0; input.tabIndex = -1;
+    label.addEventListener('keydown', (e) => {
+      if (e.target === label && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); input.click(); }
+    });
+  });
   applyPreset('illustration', false);
   selectFormat(fmtTabs[0], false);
   const settleInks = () => { moveInk(modebar, $('.mode[aria-selected="true"]'), true); moveInk($('#formats'), $('.fmt[aria-selected="true"]'), true); };

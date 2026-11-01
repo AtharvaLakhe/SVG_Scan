@@ -1,0 +1,96 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>bench</title>
+<style>
+body{margin:0;background:#0d1814;color:#e8f1ec;font:13px system-ui}
+.row{display:grid;grid-template-columns:150px repeat(4,300px);gap:8px;padding:8px;border-bottom:1px solid #223}
+.cell{width:300px;height:300px;background:#fff;display:grid;place-items:center;overflow:hidden;position:relative}
+.cell img,.cell svg{max-width:100%;max-height:100%}
+.zoom{background:#fff}
+.zoom > *{position:absolute;transform-origin:0 0}
+pre{margin:0;white-space:pre-wrap}
+</style></head><body>
+<div id="out"></div>
+<script src="../../tracer.js"></script>
+<script src="../../trace-settings.js"></script>
+<script>
+const PRESETS = SVGScanSettings.presets;
+function engineOpts(p, data) { return SVGScanSettings.engineOptions(p, data); }
+function crop(c, pad) {
+  const g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data;
+  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 8) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const o = document.createElement('canvas'); o.width = x1 - x0 + 1 + pad * 2; o.height = y1 - y0 + 1 + pad * 2;
+  o.getContext('2d').drawImage(c, pad - x0, pad - y0); return o;
+}
+function emoji(ch) { const S = 900, c = document.createElement('canvas'); c.width = c.height = S; const g = c.getContext('2d');
+  g.font = '450px "Segoe UI Emoji"'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, S / 2, S / 2 + 36); return crop(c, 20); }
+function logo() { const c = document.createElement('canvas'); c.width = 640; c.height = 260; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 640, 260);
+  g.fillStyle = '#1f6feb'; g.beginPath(); g.arc(130, 130, 90, 0, 7); g.fill();
+  g.fillStyle = '#fff'; g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 26 : 62; g.lineTo(130 + Math.cos(a) * r, 130 + Math.sin(a) * r); } g.fill();
+  g.fillStyle = '#111'; g.font = 'bold 92px Arial'; g.fillText('Acme', 245, 162);
+  g.fillStyle = '#e5484d'; g.fillRect(250, 185, 330, 14); g.save(); g.translate(560,60); g.rotate(0.5); g.fillRect(-20,-20,40,40); g.restore(); return c; }
+function lineart() { const c = document.createElement('canvas'); c.width = 600; c.height = 420; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 600, 420); g.strokeStyle = '#111'; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.lineWidth = 7; g.beginPath(); g.moveTo(60, 330); g.bezierCurveTo(120, 80, 260, 60, 300, 200); g.bezierCurveTo(330, 300, 450, 340, 540, 120); g.stroke();
+  g.lineWidth = 3; g.beginPath(); g.arc(300, 120, 60, 0, 7); g.stroke(); g.beginPath(); g.moveTo(80, 60); g.lineTo(200, 60); g.lineTo(140, 150); g.closePath(); g.stroke();
+  g.lineWidth = 2; for (let i = 0; i < 6; i++) { g.beginPath(); g.moveTo(380 + i * 18, 380); g.lineTo(400 + i * 18, 300); g.stroke(); } return c; }
+function orb() { const c = document.createElement('canvas'); c.width = 600; c.height = 600; const g = c.getContext('2d');
+  g.fillStyle = '#f4f1ee'; g.fillRect(0, 0, 600, 600);
+  g.fillStyle = 'rgba(0,0,0,.12)'; g.beginPath(); g.ellipse(310, 520, 190, 34, 0, 0, 7); g.fill();
+  const rg = g.createRadialGradient(230, 210, 10, 290, 290, 230); rg.addColorStop(0, '#9ad1ff'); rg.addColorStop(0.45, '#2f7de1'); rg.addColorStop(1, '#0b2a6b');
+  g.fillStyle = rg; g.beginPath(); g.arc(290, 290, 210, 0, 7); g.fill(); return c; }
+function button() { const c = document.createElement('canvas'); c.width = 640; c.height = 240; const g = c.getContext('2d');
+  const lg = g.createLinearGradient(0, 60, 0, 180); lg.addColorStop(0, '#ff8a5c'); lg.addColorStop(1, '#e8336d');
+  g.fillStyle = lg; g.beginPath(); g.roundRect(60, 60, 520, 120, 60); g.fill();
+  g.fillStyle = '#fff'; g.font = 'bold 54px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Get started', 320, 122); return c; }
+async function load(src) { const i = new Image(); i.src = src; await i.decode(); const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; c.getContext('2d').drawImage(i, 0, 0); return c; }
+function sunset() { /* same as app */ const W = 960, H = 600, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), horizon = 400;
+  const sky = g.createLinearGradient(0, 0, 0, horizon); sky.addColorStop(0, '#170b36'); sky.addColorStop(0.45, '#58206f'); sky.addColorStop(0.78, '#e2516f'); sky.addColorStop(1, '#ffb066'); g.fillStyle = sky; g.fillRect(0, 0, W, horizon);
+  const sunG = g.createLinearGradient(0, 210, 0, 400); sunG.addColorStop(0, '#fff3b0'); sunG.addColorStop(1, '#ff7a4d'); g.fillStyle = sunG; g.beginPath(); g.arc(480, 330, 150, 0, 7); g.fill();
+  const ridge = (color, pts) => { g.fillStyle = color; g.beginPath(); g.moveTo(0, horizon); pts.forEach(([x, y]) => g.lineTo(x, y)); g.lineTo(W, horizon); g.fill(); };
+  ridge('#8a3373', [[0, 330], [110, 280], [210, 320], [330, 250], [430, 330], [560, 300], [690, 230], [800, 310], [960, 270]]);
+  ridge('#4b1d5e', [[0, 360], [140, 310], [260, 370], [380, 330], [520, 380], [650, 320], [780, 370], [900, 330], [960, 350]]);
+  const sea = g.createLinearGradient(0, horizon, 0, H); sea.addColorStop(0, '#2c1253'); sea.addColorStop(1, '#0c0620'); g.fillStyle = sea; g.fillRect(0, horizon, W, H - horizon); return c; }
+
+function prep(c, quality) {
+  const size = SVGScanSettings.workingSize(c.width, c.height, quality || 'balanced');
+  const o = document.createElement('canvas'); o.width = size.width; o.height = size.height;
+  const g = o.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high';
+  g.drawImage(c, 0, 0, o.width, o.height); return g.getImageData(0, 0, o.width, o.height);
+}
+
+async function rasterize(svg, w, h) { const i = new Image(); i.src = 'data:image/svg+xml,' + encodeURIComponent(svg); await i.decode();
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(i, 0, 0, w, h); return g.getImageData(0, 0, w, h); }
+function err(a, b) { let s = 0, n = 0; for (let i = 0; i < a.data.length; i += 4) { const aa = a.data[i + 3] / 255, ba = b.data[i + 3] / 255;
+  for (let k = 0; k < 3; k++) { const d = a.data[i + k] * aa + 255 * (1 - aa) - (b.data[i + k] * ba + 255 * (1 - ba)); s += d * d; } n += 3; } return Math.sqrt(s / n); }
+
+window.runBench = async function (filter, options = {}) {
+  const cases = [
+    ['fox', emoji('🦊'), 'illustration'], ['watermelon', emoji('🍉'), 'illustration'], ['rocket', emoji('🚀'), 'illustration'], ['sunflower', emoji('🌻'), 'illustration'],
+    ['logo', logo(), 'logo'], ['orb', orb(), 'illustration'], ['button', button(), 'illustration'], ['lineart', lineart(), 'lineart'], ['sunset', sunset(), 'illustration'],
+    ['dog', await load('../fixtures/dog.jpg'), 'photo'], ['mountain', await load('../fixtures/mountain.jpg'), 'photo']
+  ].filter(c => !filter || filter.includes(c[0]));
+  const out = document.getElementById('out'); out.innerHTML = ''; const results = [];
+  for (const [name, canvas, preset] of cases) {
+    const data = prep(canvas, options.quality), o = engineOpts(PRESETS[options.preset || preset], data), engine = options.engine || SVGScan;
+    const t0 = performance.now(); const r = engine.trace(data, o); const ms = performance.now() - t0;
+    const svg = engine.toSVG(r, { width: data.width, height: data.height });
+    const ras = await rasterize(svg, data.width, data.height); const e = err(data, ras);
+    results.push({ name, preset: options.preset || preset, width: data.width, height: data.height, nodes: r.stats.nodes + (r.stats.alphaNodes || 0), bytes: new Blob([svg]).size, kb: +(svg.length / 1024).toFixed(1), ms: Math.round(ms), rmse: +e.toFixed(2) });
+    const row = document.createElement('div'); row.className = 'row';
+    const src = canvas.toDataURL(), svgUrl = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    const outlineDoc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    outlineDoc.querySelectorAll('path').forEach(path => { if (!path.closest('defs')) { path.setAttribute('fill','none'); path.setAttribute('stroke','#e5484d'); path.setAttribute('stroke-width', Math.max(r.width,r.height)/500); } });
+    const outline = new XMLSerializer().serializeToString(outlineDoc.documentElement);
+    // zoomed crop: 4x around a point of interest (center-ish)
+    const zx = r.width * 0.42, zy = r.height * 0.32, Z = 4, cw = 300;
+    row.innerHTML = `<pre>${name} (${preset})\nnodes ${r.stats.nodes}\n${(svg.length / 1024).toFixed(1)} KB\n${Math.round(ms)} ms\nrmse ${e.toFixed(2)}</pre>
+      <div class="cell"><img src="${src}"></div><div class="cell"><img src="${svgUrl}"></div>
+      <div class="cell">${outline.replace('<svg', '<svg style="width:100%;height:100%"')}</div>
+      <div class="cell zoom"><img src="${svgUrl}" style="max-width:none;max-height:none;width:${data.width * Z * cw / Math.max(data.width, data.height)}px;left:${-zx * Z * cw / Math.max(data.width, data.height) + cw / 2}px;top:${-zy * Z * cw / Math.max(data.width, data.height) + cw / 2}px"></div>`;
+    out.appendChild(row);
+  }
+  return results;
+};
+</script></body></html>

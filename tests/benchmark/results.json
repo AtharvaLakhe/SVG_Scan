@@ -1,0 +1,210 @@
+{
+  "date": "2026-11-01T08:11:46.441Z",
+  "browser": "156.0.8078.4",
+  "baselineRevision": "b36b29a",
+  "metric": "RGB RMSE (0–255), composited on white at the working resolution; lower is better",
+  "baseline": [
+    {
+      "name": "fox",
+      "preset": "illustration",
+      "width": 875,
+      "height": 900,
+      "nodes": 1086,
+      "bytes": 28414,
+      "kb": 27.7,
+      "ms": 5147,
+      "rmse": 5.87
+    },
+    {
+      "name": "rocket",
+      "preset": "illustration",
+      "width": 900,
+      "height": 886,
+      "nodes": 446,
+      "bytes": 15291,
+      "kb": 14.9,
+      "ms": 4549,
+      "rmse": 5.29
+    },
+    {
+      "name": "logo",
+      "preset": "logo",
+      "width": 900,
+      "height": 365,
+      "nodes": 109,
+      "bytes": 2389,
+      "kb": 2.3,
+      "ms": 2975,
+      "rmse": 7.89
+    },
+    {
+      "name": "orb",
+      "preset": "illustration",
+      "width": 900,
+      "height": 900,
+      "nodes": 249,
+      "bytes": 7183,
+      "kb": 7,
+      "ms": 5652,
+      "rmse": 4.65
+    },
+    {
+      "name": "lineart",
+      "preset": "lineart",
+      "width": 900,
+      "height": 630,
+      "nodes": 154,
+      "bytes": 3827,
+      "kb": 3.7,
+      "ms": 1256,
+      "rmse": 7.18
+    },
+    {
+      "name": "sunset",
+      "preset": "illustration",
+      "width": 960,
+      "height": 600,
+      "nodes": 160,
+      "bytes": 5126,
+      "kb": 5,
+      "ms": 2180,
+      "rmse": 3.36
+    },
+    {
+      "name": "dog",
+      "preset": "photo",
+      "width": 900,
+      "height": 600,
+      "nodes": 12704,
+      "bytes": 230541,
+      "kb": 225.1,
+      "ms": 5788,
+      "rmse": 19.75
+    },
+    {
+      "name": "mountain",
+      "preset": "photo",
+      "width": 900,
+      "height": 600,
+      "nodes": 10266,
+      "bytes": 182902,
+      "kb": 178.6,
+      "ms": 4921,
+      "rmse": 14.24
+    }
+  ],
+  "standard": [
+    {
+      "name": "fox",
+      "preset": "illustration",
+      "width": 875,
+      "height": 900,
+      "nodes": 17833,
+      "bytes": 92368,
+      "kb": 90.2,
+      "ms": 6780,
+      "rmse": 5.07
+    },
+    {
+      "name": "rocket",
+      "preset": "illustration",
+      "width": 900,
+      "height": 886,
+      "nodes": 23199,
+      "bytes": 105167,
+      "kb": 102.7,
+      "ms": 6104,
+      "rmse": 4.51
+    },
+    {
+      "name": "logo",
+      "preset": "logo",
+      "width": 900,
+      "height": 365,
+      "nodes": 109,
+      "bytes": 2389,
+      "kb": 2.3,
+      "ms": 2891,
+      "rmse": 7.89
+    },
+    {
+      "name": "orb",
+      "preset": "illustration",
+      "width": 900,
+      "height": 900,
+      "nodes": 249,
+      "bytes": 7223,
+      "kb": 7.1,
+      "ms": 4729,
+      "rmse": 4.65
+    },
+    {
+      "name": "lineart",
+      "preset": "lineart",
+      "width": 900,
+      "height": 630,
+      "nodes": 154,
+      "bytes": 3827,
+      "kb": 3.7,
+      "ms": 1196,
+      "rmse": 7.18
+    },
+    {
+      "name": "sunset",
+      "preset": "illustration",
+      "width": 960,
+      "height": 600,
+      "nodes": 160,
+      "bytes": 5166,
+      "kb": 5,
+      "ms": 2448,
+      "rmse": 3.36
+    },
+    {
+      "name": "dog",
+      "preset": "photo",
+      "width": 900,
+      "height": 600,
+      "nodes": 16334,
+      "bytes": 244638,
+      "kb": 238.9,
+      "ms": 6289,
+      "rmse": 19.71
+    },
+    {
+      "name": "mountain",
+      "preset": "photo",
+      "width": 900,
+      "height": 600,
+      "nodes": 13326,
+      "bytes": 194987,
+      "kb": 190.4,
+      "ms": 5655,
+      "rmse": 14.25
+    }
+  ],
+  "detailed": [
+    {
+      "name": "dog",
+      "preset": "detailed",
+      "width": 900,
+      "height": 600,
+      "nodes": 358318,
+      "bytes": 4471157,
+      "kb": 4366.4,
+      "ms": 17526,
+      "rmse": 5.31
+    },
+    {
+      "name": "mountain",
+      "preset": "detailed",
+      "width": 900,
+      "height": 600,
+      "nodes": 358763,
+      "bytes": 3822497,
+      "kb": 3732.9,
+      "ms": 15941,
+      "rmse": 5.76
+    }
+  ]
+}

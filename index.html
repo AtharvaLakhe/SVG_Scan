@@ -180,13 +180,13 @@ kbd {
 .frame.pixelated .raster { image-rendering: pixelated; }
 .vector { clip-path: inset(0 0 0 var(--split)); }
 .vector svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.vector path { transition: opacity .35s var(--ease); }
-.vector path.off { opacity: 0; }
+.vector .trace-layer { transition: opacity .35s var(--ease); }
+.vector .trace-layer.off { opacity: 0; }
 .vector.fresh svg { animation: fresh .35s var(--ease) both; }
 @keyframes fresh { from { opacity: .4; } }
 .vector.wipe svg { animation: wipe 1.2s var(--ease-io) both; }
 @keyframes wipe { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
-.vector.draw path {
+.vector.draw .trace-layer {
   stroke: var(--accent); stroke-width: var(--hair); stroke-linejoin: round;
   stroke-dasharray: 1 1; stroke-dashoffset: 1; fill-opacity: 0;
   animation: draw var(--dd) var(--ease-io) forwards, inkin .7s var(--ease) forwards;
@@ -195,7 +195,7 @@ kbd {
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes inkin { to { fill-opacity: 1; stroke-opacity: 0; } }
 .frame.outline .raster { opacity: .22; filter: grayscale(1); }
-.frame.outline .vector path { fill: none !important; stroke: var(--accent); stroke-width: var(--ow, 1px); stroke-linejoin: round; }
+.frame.outline .vector .trace-layer { fill: none !important; stroke: var(--accent); stroke-width: var(--ow, 1px); stroke-linejoin: round; }
 
 .split { pointer-events: none; }
 .split-line {
@@ -299,6 +299,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px 
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 6px; min-height: 32px; }
 .swatches .muted { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--faint); line-height: 1.4; }
 .panel-toggle { font-size: 14px; font-weight: 500; }
+  .quality-field { display: grid; gap: 7px; font-size: 14px; font-weight: 500; }
+  .quality-field select { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); }
+  .trace-note { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
+  .chips .chip:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .swatches { max-height: 190px; overflow-y: auto; }
 .swatch {
   position: relative; aspect-ratio: 1; padding: 0; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .14);
   background: var(--c); transition: transform .2s var(--ease), opacity .25s; animation: pop .45s var(--ease) both; animation-delay: calc(var(--i) * 28ms);
@@ -458,6 +463,7 @@ textarea::placeholder { color: var(--faint); }
   html { scroll-behavior: auto; }
 }
 </style>
+<link rel="stylesheet" href="studio.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
@@ -470,6 +476,7 @@ textarea::placeholder { color: var(--faint); }
   </filter>
 </svg>
 
+<a class="skip-link" href="#workspace">Skip to workspace</a>
 <div class="shell">
   <header class="top">
     <a class="brand" href="./" aria-label="SVG Scan home">
@@ -482,6 +489,7 @@ textarea::placeholder { color: var(--faint); }
       SVG Scan
     </a>
     <div class="top-actions">
+      <span class="privacy-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Z"/><path d="m8 12 3 3 5-6"/></svg>Images stay on your device</span>
       <a class="byline" href="https://github.com/AtharvaLakhe" target="_blank" rel="noopener">by @AtharvaLakhe</a>
       <a class="star" href="https://github.com/AtharvaLakhe/SVG_Scan" target="_blank" rel="noopener" aria-label="Star SVG Scan on GitHub">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg>
@@ -493,22 +501,32 @@ textarea::placeholder { color: var(--faint); }
 
   <section class="hero">
     <h1 class="headline" id="headline">
-      <span class="hl-crisp">Pixels in.<br>Paths out.</span>
-      <span class="hl-pixel" aria-hidden="true">Pixels in.<br>Paths out.</span>
+      <span class="hl-crisp">Pixels in. Paths out.</span>
+      <span class="hl-pixel" aria-hidden="true">Pixels in. Paths out.</span>
       <span class="hl-beam" aria-hidden="true"></span>
     </h1>
-    <p class="lede">Trace any PNG or JPG into a clean, editable SVG, then turn that SVG into React, Vue, CSS or Android code. <strong>It all runs in your browser</strong>, so your images never leave your device.</p>
+    <p class="lede">From a first sketch to the finest detail.<br> Turn images into editable vectors and ready-to-use code.</p>
   </section>
 
-  <main>
+  <main id="workspace">
+    <div class="workspace-toolbar">
     <div class="modebar" role="tablist" aria-label="Tool">
       <button class="mode" role="tab" id="tab-trace" aria-controls="view-trace" aria-selected="true" data-mode="trace">Image to SVG</button>
       <button class="mode" role="tab" id="tab-code" aria-controls="view-code" aria-selected="false" tabindex="-1" data-mode="code">SVG to code</button>
       <span class="ink" aria-hidden="true"></span>
     </div>
 
+      <button class="shortcut-button" id="openShortcuts" aria-label="Keyboard shortcuts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M6 10h2m3 0h2m3 0h2M6 14h2m3 0h7"/></svg><span>Shortcuts</span><kbd>?</kbd></button>
+    </div>
+
     <!-- ===== Image to SVG ===== -->
     <section class="view" id="view-trace" role="tabpanel" aria-labelledby="tab-trace">
+      <div class="canvas-column">
+        <div class="canvas-header">
+          <div class="file-info"><span class="file-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 16l3-3 5 4"/></svg></span><div><strong id="imageName">Your canvas</strong><span id="imageMeta">Drop an image to get started</span></div></div>
+          <span class="trace-state" id="traceState" role="status">Ready when you are</span>
+          <label class="surface-picker"><span class="sr-only">Canvas background</span><select id="canvasBackground" aria-label="Canvas background"><option value="grid">Grid</option><option value="checker">Transparency</option><option value="paper">Light</option><option value="dark">Dark</option></select></label>
+        </div>
       <div class="stage mat" id="stage">
         <div class="empty" id="empty">
           <div class="dropline"></div>
@@ -578,41 +596,64 @@ textarea::placeholder { color: var(--faint); }
         </div>
       </div>
 
-      <aside class="panel" id="controls" aria-label="Trace settings">
-        <div class="group">
-          <h3>Preset</h3>
-          <div class="chips" id="presets">
-            <button class="chip" data-preset="logo" aria-pressed="false">Logo</button>
-            <button class="chip" data-preset="illustration" aria-pressed="true">Illustration</button>
-            <button class="chip" data-preset="photo" aria-pressed="false">Photo</button>
-            <button class="chip" data-preset="lineart" aria-pressed="false">Line art</button>
-          </div>
-        </div>
-        <div class="group sliders">
-          <label class="slider"><span>Colors</span><output id="colorsOut">14</output><input type="range" id="colors" min="2" max="32" value="14"></label>
-          <label class="slider"><span>Detail</span><output id="detailOut">65</output><input type="range" id="detail" min="0" max="100" value="65"></label>
-          <label class="slider"><span>Smoothness</span><output id="smoothOut">70</output><input type="range" id="smooth" min="0" max="100" value="70"></label>
-          <label class="slider"><span>Noise filter</span><output id="noiseOut">28</output><input type="range" id="noise" min="0" max="100" value="28"></label>
-          <label class="toggle panel-toggle"><input type="checkbox" id="optGradients" checked><span></span>Smooth gradients</label>
-        </div>
-        <div class="group">
-          <h3>Palette <small>Click a color to drop it</small></h3>
-          <div class="swatches" id="swatches"><p class="muted">The colors the tracer finds show up here.</p></div>
-        </div>
-        <dl class="stats">
+        <div class="canvas-footer">        <dl class="stats">
           <div><dt>Paths</dt><dd id="stPaths">0</dd></div>
           <div><dt>Nodes</dt><dd id="stNodes">0</dd></div>
           <div><dt>File size</dt><dd id="stSize">0 KB</dd></div>
           <div><dt>Traced in</dt><dd id="stTime">0 ms</dd></div>
         </dl>
+<span class="canvas-hint">Scroll to zoom · Drag to pan</span></div>
+      </div>
+
+      <aside class="panel" id="controls" aria-label="Trace settings">
+        <div class="inspector-heading"><h2>Trace settings</h2><button class="text-button" id="resetSettings" title="Reset to the suggested preset">Reset</button></div>
+        <div class="inspector-tabs" role="tablist" aria-label="Inspector"><button role="tab" id="adjustTab" aria-controls="adjustPane" aria-selected="true">Adjust</button><button role="tab" id="paletteTab" aria-controls="palettePane" aria-selected="false" tabindex="-1">Palette <span id="paletteCount">0</span></button></div>
+        <div class="inspector-scroll">
+        <div id="adjustPane" role="tabpanel" aria-labelledby="adjustTab">
+
+        <div class="group">
+          <h3>Start with a preset</h3>
+          <div class="chips" id="presets">
+            <button class="chip" data-preset="logo" aria-pressed="false">Logo</button>
+            <button class="chip" data-preset="illustration" aria-pressed="true">Illustration</button>
+            <button class="chip" data-preset="photo" aria-pressed="false">Photo</button>
+            <button class="chip" data-preset="lineart" aria-pressed="false">Line art</button>
+            <button class="chip" data-preset="detailed" aria-label="Detailed" aria-pressed="false">Detailed</button>
+          </div>
+          <p class="trace-note preset-note" id="presetNote">Balanced curves for colorful artwork.</p>
+        </div>
+        <div class="group sliders">
+          <label class="quality-field" for="quality">Working resolution<select id="quality"><option value="fast">Fast · up to 900 px</option><option value="balanced" selected>Balanced · up to 1400 px</option><option value="fine">Fine · up to 2200 px</option></select></label>
+          <p class="trace-note" id="workingSize" aria-live="polite">Choose an image to see its working size.</p>
+          <label class="slider"><span>Colors</span><output id="colorsOut">14</output><input type="range" id="colors" min="2" max="128" value="14"></label>
+          <label class="slider"><span>Detail</span><output id="detailOut">65</output><input type="range" id="detail" min="0" max="100" value="65"></label>
+          <label class="slider"><span>Smoothness</span><output id="smoothOut">70</output><input type="range" id="smooth" min="0" max="100" value="70"></label>
+          <details class="advanced-settings"><summary>Advanced cleanup</summary><div class="advanced-content">
+          <label class="slider"><span>Noise filter</span><output id="noiseOut">28</output><input type="range" id="noise" min="0" max="100" value="28"></label>
+          <label class="slider"><span>Edge-aware denoise</span><output id="denoiseOut">0</output><input type="range" id="denoise" min="0" max="100" value="0" aria-describedby="denoiseHelp"></label>
+          <p class="trace-note" id="denoiseHelp">Reduce grain while keeping contrasting edges. More colors and higher resolution produce larger SVGs.</p>
+          <label class="toggle panel-toggle"><input type="checkbox" id="optGradients" checked><span></span>Smooth gradients</label>
+          </div></details>
+        </div>
+        </div>
+        <div id="palettePane" role="tabpanel" aria-labelledby="paletteTab" hidden>
+        <div class="group palette-heading">
+          <h3>Make room for less.</h3><p class="trace-note" id="paletteStatus">Trace an image to explore its colors. Click a swatch to leave that color out.</p>
+          <div class="swatches" id="swatches"><p class="muted">The colors the tracer finds show up here.</p></div>
+        </div>
+          <button class="btn small" id="restoreColors" disabled>Restore all colors</button>
+        </div>
+        </div>
         <div class="actions">
+          <p class="export-hint" id="exportHint">Your SVG will be ready here.</p>
+          <button class="btn" id="cancelTrace" hidden>Cancel trace</button>
           <button class="btn primary" id="download" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg>
             Download SVG
           </button>
           <div class="row">
             <button class="btn" id="copySvg" disabled>Copy SVG</button>
-            <button class="btn" id="toCode" disabled>Turn into code</button>
+            <button class="btn" id="toCode" disabled>Get code</button>
           </div>
         </div>
       </aside>
@@ -672,7 +713,7 @@ textarea::placeholder { color: var(--faint); }
 
   <section class="how" id="how">
     <h2>A tracer you can read in one sitting</h2>
-    <p>No servers, no AI guesswork, no dependencies. About 1,000 lines of plain JavaScript turn pixels into paths in four passes, inside a Web Worker so the page never stutters.</p>
+    <p>No servers, no AI guesswork, no dependencies. A small, readable JavaScript engine turn pixels into paths in four passes, inside a Web Worker so the page never stutters.</p>
     <ol class="steps">
       <li>
         <figure class="mat">
@@ -736,9 +777,11 @@ textarea::placeholder { color: var(--faint); }
 </div>
 
 <div class="dropveil" id="dropveil" aria-hidden="true"><div>Drop to trace</div></div>
+<dialog class="shortcuts-dialog" id="shortcutsDialog" aria-labelledby="shortcutsTitle"><div class="dialog-heading"><h2 id="shortcutsTitle">A few useful shortcuts</h2><button class="text-button" id="closeShortcuts" aria-label="Close keyboard shortcuts">Close <kbd>Esc</kbd></button></div><dl class="shortcut-list"><div><dt>Paste an image or SVG</dt><dd><kbd>Ctrl / ⌘</kbd> <kbd>V</kbd></dd></div><div><dt>Compare, vector, outline</dt><dd><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dd></div><div><dt>Zoom in / out</dt><dd><kbd>+</kbd> <kbd>−</kbd></dd></div><div><dt>Fit to canvas</dt><dd><kbd>0</kbd></dd></div><div><dt>Zoom at a point</dt><dd>Double-click</dd></div></dl><p>Scroll to zoom. Drag to move around. Pinch with two fingers on touch screens.</p></dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="tracer.js"></script>
+<script src="trace-settings.js"></script>
 <script src="svg2code.js"></script>
 <script src="app.js"></script>
 </body>

@@ -27,22 +27,36 @@
     gradients: true,  // give shaded regions a linear gradient instead of a flat fill
     merge: 6,         // merge regions across soft borders while one gradient still fits this well (RMS, 0-255)
     blur: 0,          // pre-blur radius, helps photos
+    denoise: 0,       // edge-aware smoothing strength (0-100), preserves contrasting details
     precision: 1,     // decimals in path data
     stacked: true     // stack layers so neighbours never leave hairline gaps
   };
 
   function trace(image, options, onProgress) {
+    if (!image || !Number.isInteger(image.width) || !Number.isInteger(image.height) || image.width < 1 || image.height < 1 || image.width * image.height > 4000000) {
+      throw new RangeError('Image dimensions must be positive integers with at most 4 million pixels.');
+    }
+    if (!ArrayBuffer.isView(image.data) || !/^\[object Uint8(?:Clamped)?Array\]$/.test(Object.prototype.toString.call(image.data)) || image.data.length !== image.width * image.height * 4) {
+      throw new TypeError('Image data must be an RGBA byte array matching its dimensions.');
+    }
     var o = Object.assign({}, DEFAULTS, options);
+    var ranges = { colors: [2, 256], tolerance: [.05, 10], smoothness: [0, 3], corner: [20, 85], noise: [0, 4000000], majority: [0, 4], merge: [0, 32], blur: [0, 8], denoise: [0, 100], precision: [0, 4] };
+    Object.keys(ranges).forEach(function (key) {
+      if (typeof o[key] !== 'number' || !Number.isFinite(o[key])) throw new TypeError('Trace option ' + key + ' must be a finite number.');
+      o[key] = clamp(o[key], ranges[key][0], ranges[key][1]);
+    });
+    o.majority = Math.round(o.majority); o.precision = Math.round(o.precision);
     var W = image.width, H = image.height, N = W * H;
     var report = onProgress || function () {};
     var t0 = Date.now();
 
     var px = image.data;
     if (o.blur > 0) px = boxBlur(px, W, H, Math.round(o.blur));
+    if (o.denoise > 0) { report(0.01, 'Preserving edges'); px = edgeBlur(px, W, H, o.denoise); }
 
     report(0.04, 'Reading colors');
     var lab = toOklab(px, N);
-    var palette = buildPalette(px, lab, N, clamp(o.colors | 0, 2, 64), mulberry32(7));
+    var palette = buildPalette(px, lab, N, Math.round(o.colors), mulberry32(7));
 
     report(0.18, 'Sorting pixels');
     var labels = assignLabels(px, lab, N, palette);
@@ -83,7 +97,7 @@
     for (i = 0; i < K; i++) pixelsOf.push(new Int32Array(area[i]));
     for (i = 0; i < N; i++) { l = labels[i]; if (l >= 0) pixelsOf[l][fillAt[l]++] = i; }
     var fitOpts = {
-      tol: Math.max(0.2, o.tolerance),
+      tol: o.tolerance,
       passes: o.smoothness <= 0 ? 0 : Math.max(1, Math.round(o.smoothness * 2.3)),
       corner: clamp(o.corner, 20, 85) * Math.PI / 180,
       prec: o.precision
@@ -133,8 +147,10 @@
       nodes += layerNodes;
     }
 
+    report(.99, 'Preserving transparency');
+    var alpha = traceAlpha(image.data, W, H);
     report(1, 'Done');
-    return { width: W, height: H, layers: layers, stats: { colors: layers.length, nodes: nodes, ms: Date.now() - t0 } };
+    return { width: W, height: H, layers: layers, alpha: alpha, stats: { colors: layers.length, nodes: nodes, alphaNodes: alpha.reduce(function (n, a) { return n + a.nodes; }, 0), ms: Date.now() - t0 } };
   }
 
   /* ---------- 1. quantize ---------- */
@@ -172,24 +188,27 @@
 
   function buildPalette(px, lab, N, K, rand) {
     var step = Math.max(1, N / 40000), idx = [], uniq = new Map(), f, j;
+    // The exact-color shortcut must inspect every pixel. Sampling could miss a
+    // small accent entirely, even when the requested palette has room for it.
+    for (var p = 0; p < N && uniq.size <= K; p++) {
+      if (!px[p * 4 + 3]) continue;
+      j = p * 4;
+      var key = (px[j] << 16) | (px[j + 1] << 8) | px[j + 2];
+      if (!uniq.has(key)) uniq.set(key, p);
+    }
     for (f = 0; f < N; f += step) {
       var i = f | 0;
-      if (px[i * 4 + 3] < 128) continue;
+      if (!px[i * 4 + 3]) continue;
       idx.push(i);
-      if (uniq.size <= K) {
-        j = i * 4;
-        var key = (px[j] << 16) | (px[j + 1] << 8) | px[j + 2];
-        if (!uniq.has(key)) uniq.set(key, i);
-      }
     }
     var n = idx.length, S = new Float32Array(n * 3), k, c;
-    if (!n) return new Float32Array(0);
     // Few distinct colors (flat logos, pixel art): use them exactly.
     if (uniq.size <= K) {
       var exact = new Float32Array(uniq.size * 3);
       Array.from(uniq.values()).forEach(function (p, q) { exact[q * 3] = lab[p * 3]; exact[q * 3 + 1] = lab[p * 3 + 1]; exact[q * 3 + 2] = lab[p * 3 + 2]; });
       return exact;
     }
+    if (!n) return new Float32Array(0);
     for (k = 0; k < n; k++) { S[k * 3] = lab[idx[k] * 3]; S[k * 3 + 1] = lab[idx[k] * 3 + 1]; S[k * 3 + 2] = lab[idx[k] * 3 + 2]; }
 
     // k-means++ seeding
@@ -237,7 +256,7 @@
   function assignLabels(px, lab, N, P) {
     var L = new Int16Array(N), K = P.length / 3;
     for (var i = 0; i < N; i++) {
-      if (px[i * 4 + 3] < 128 || !K) { L[i] = -1; continue; }
+      if (!px[i * 4 + 3] || !K) { L[i] = -1; continue; }
       if (i && lab[i * 3] === lab[i * 3 - 3] && lab[i * 3 + 1] === lab[i * 3 - 2] && lab[i * 3 + 2] === lab[i * 3 - 1] && L[i - 1] >= 0) { L[i] = L[i - 1]; continue; }
       var best = 0, bd = Infinity;
       for (var c = 0; c < K; c++) { var e = dist(lab, i * 3, P, c * 3); if (e < bd) { bd = e; best = c; } }
@@ -293,13 +312,14 @@
     for (var y = 1; y < H - 1; y++) {
       for (var x = 1; x < W - 1; x++) {
         var p = y * W + x, c = L[p];
+        if (c < 0) continue;
         if (L[p - 1] === c && L[p + 1] === c && L[p - W] === c && L[p + W] === c) continue;
         var k = 0;
         for (var dy = -W; dy <= W; dy += W) for (var dx = -1; dx <= 1; dx++) v[k++] = L[p + dy + dx];
         for (var i = 0; i < 9; i++) {
           var n = 0;
           for (var j = 0; j < 9; j++) if (v[j] === v[i]) n++;
-          if (n >= 5) { out[p] = v[i]; break; }
+          if (v[i] >= 0 && n >= 5) { out[p] = v[i]; break; }
         }
       }
     }
@@ -311,6 +331,7 @@
     for (var s = 0; s < N; s++) {
       if (seen[s]) continue;
       var lab = L[s], sp = 0, n = 0;
+      if (lab < 0) { seen[s] = 1; continue; }
       stack[sp++] = s; seen[s] = 1;
       while (sp) {
         var p = stack[--sp], x = p % W;
@@ -671,6 +692,9 @@
   // Midpoints shave half a pixel off every corner. Where two straight runs of
   // 3+ edges meet, the corner is real, so put the exact vertex back.
   function keepCorners(mid, dirs) {
+    // A one-pixel loop must remain a square, not the diamond formed by its
+    // edge midpoints. Otherwise a transparent pinhole becomes half opaque.
+    if (dirs.length <= 8) return mid.map(function (v, i) { return v - .5 * (i % 2 ? DY[dirs[i >> 1]] : DX[dirs[i >> 1]]); });
     var n = dirs.length, s = 0, i, k;
     while (s < n && dirs[s] === dirs[(s + n - 1) % n]) s++;
     if (s === n) return mid;
@@ -700,7 +724,7 @@
 
     // Polygon mode, and loops too small to have a meaningful curve.
     if (!o.passes || n < 10) {
-      var poly = simplifyClosed(p, Math.max(o.tol, 0.5));
+      var poly = simplifyClosed(p, Math.min(o.tol, n < 10 ? .2 : o.tol));
       var m = poly.length >> 1;
       if (m < 3) return { d: '', nodes: 0 };
       w.move(poly[0], poly[1]);
@@ -960,8 +984,80 @@
 
   /* ---------- helpers ---------- */
 
+  // A small bilateral filter: color distance and spatial distance both matter.
+    // Ignore transparent neighbors so hidden RGB never bleeds into visible art.
+  function edgeBlur(src, W, H, strength) {
+    var out = new Uint8ClampedArray(src), sigma = 4 + strength * .5, denom = 2 * sigma * sigma;
+    var weights = new Float32Array(195076);
+    for (var d = 0; d < weights.length; d++) weights[d] = Math.exp(-d / denom);
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      var p = (y * W + x) * 4;
+      if (!src[p + 3]) continue;
+      var r = 0, g = 0, b = 0, total = 0;
+      for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+        var xx = x + dx, yy = y + dy;
+        if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue;
+        var q = (yy * W + xx) * 4;
+        if (!src[q + 3]) continue;
+        var dr = src[p] - src[q], dg = src[p + 1] - src[q + 1], db = src[p + 2] - src[q + 2];
+        var weight = weights[dr * dr + dg * dg + db * db] * Math.exp(-(dx * dx + dy * dy) / 2) * src[q + 3] / 255;
+        total += weight; r += src[q] * weight; g += src[q + 1] * weight; b += src[q + 2] * weight;
+      }
+      out[p] = r / total; out[p + 1] = g / total; out[p + 2] = b / total;
+    }
+    return out;
+  }
+
+  // Apply opacity once, after the opaque color layers have been composited.
+  // Cumulative silhouettes overlap deliberately: a luminance mask paints each
+  // higher alpha over the previous one, avoiding seams between alpha bands.
+  function traceAlpha(px, W, H) {
+    var N = W * H, partial = false, levels = new Set(), i;
+    for (i = 0; i < N; i++) if (px[i * 4 + 3]) {
+      var a = px[i * 4 + 3];
+      if (a < 255) partial = true;
+      levels.add(a);
+    }
+    if (!partial) return [];
+    var quantized = levels.size > 16, values = quantized ? Array.from({ length: 16 }, function (_, j) { return (j + 1) * 16 - 1; }) : Array.from(levels).sort(function (a, b) { return a - b; });
+    var mask = new Uint8Array(N), out = [], edgeCount = 0;
+    values.forEach(function (value) {
+      var any = false;
+      for (var p = 0; p < N; p++) {
+        var alpha = px[p * 4 + 3];
+        var level = quantized && alpha ? Math.min(255, Math.ceil(alpha / 16) * 16 - 1) : alpha;
+        mask[p] = level >= value ? 1 : 0;
+        if (mask[p]) any = true;
+      }
+      if (!any) return;
+      // Textured alpha can generate millions of independent contours. Bound
+      // the edge work before allocating loops rather than exhausting memory.
+      for (var p = 0; p < N; p++) if (mask[p]) {
+        var x = p % W;
+        if (!x || !mask[p - 1]) edgeCount++;
+        if (x === W - 1 || !mask[p + 1]) edgeCount++;
+        if (p < W || !mask[p - W]) edgeCount++;
+        if (p >= N - W || !mask[p + W]) edgeCount++;
+        if (edgeCount > 500000) throw new RangeError('Transparency has too much fine detail for vector masks. Try a smaller image or flatten its transparency first.');
+      }
+      var loops = traceMask(mask, W, H), d = '', nodes = 0;
+      loops.forEach(function (loop) {
+        var fit = fitLoop(loop, { tol: .2, passes: 0, prec: 1 });
+        d += fit.d; nodes += fit.nodes;
+      });
+      if (d) out.push({ value: value, d: d, nodes: nodes });
+    });
+    return out;
+  }
+
   function boxBlur(src, W, H, r) {
-    var tmp = new Float32Array(src.length), out = new Uint8ClampedArray(src.length), d = 2 * r + 1, x, y, c, acc, k;
+    var original = src;
+    src = new Float32Array(original.length);
+    for (var p = 0; p < src.length; p += 4) {
+      var alpha = original[p + 3] / 255;
+      src[p] = original[p] * alpha; src[p + 1] = original[p + 1] * alpha; src[p + 2] = original[p + 2] * alpha; src[p + 3] = original[p + 3];
+    }
+    var tmp = new Float32Array(src.length), out = new Float32Array(src.length), d = 2 * r + 1, x, y, c, acc, k;
     for (y = 0; y < H; y++) for (c = 0; c < 4; c++) {
       acc = 0;
       for (k = -r; k <= r; k++) acc += src[(y * W + clamp(k, 0, W - 1)) * 4 + c];
@@ -978,7 +1074,13 @@
         acc += tmp[(Math.min(H - 1, y + r + 1) * W + x) * 4 + c] - tmp[(Math.max(0, y - r) * W + x) * 4 + c];
       }
     }
-    return out;
+    var result = new Uint8ClampedArray(src.length);
+    for (p = 0; p < src.length; p += 4) {
+      var scale = out[p + 3] ? 255 / out[p + 3] : 0;
+      result[p] = out[p] * scale; result[p + 1] = out[p + 1] * scale; result[p + 2] = out[p + 2] * scale;
+      result[p + 3] = original[p + 3];
+    }
+    return result;
   }
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
@@ -1005,12 +1107,19 @@
   function toSVG(res, opt) {
     opt = opt || {};
     var hidden = opt.hidden || new Set(), defs = '', body = '';
+    var prefix = String(opt.idPrefix || 'scan-').replace(/[^a-zA-Z0-9_-]/g, '');
     res.layers.forEach(function (l, i) {
       if (hidden.has(l.color)) return;
       var fill = l.color;
-      if (l.gradient && opt.gradients !== false) { defs += '\n' + gradientDef('g' + i, l.gradient); fill = 'url(#g' + i + ')'; }
+      if (l.gradient && opt.gradients !== false) { defs += '\n' + gradientDef(prefix + 'g' + i, l.gradient); fill = 'url(#' + prefix + 'g' + i + ')'; }
       body += '\n<path fill="' + fill + '" d="' + l.d + '"/>';
     });
+    if (res.alpha && res.alpha.length) {
+      defs += '\n<mask id="' + prefix + 'alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="' + res.width + '" height="' + res.height + '" style="mask-type:luminance">';
+      res.alpha.forEach(function (a) { defs += '\n<path fill="' + hex([a.value, a.value, a.value]) + '" d="' + a.d + '"/>'; });
+      defs += '\n</mask>';
+      body = '\n<g mask="url(#' + prefix + 'alpha)">' + body + '\n</g>';
+    }
     var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + res.width + ' ' + res.height + '"';
     if (opt.width) s += ' width="' + opt.width + '" height="' + opt.height + '"';
     s += '>' + (defs ? '\n<defs>' + defs + '\n</defs>' : '') + body;
