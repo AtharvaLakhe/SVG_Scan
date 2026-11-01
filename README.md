@@ -16,7 +16,9 @@ Runs entirely in your browser. No uploads, no sign-up, no runtime dependencies.
 
 </div>
 
-<p align="center"><img src="assets/demo.gif" alt="Tracing a fox emoji into SVG: the scan, the path reveal, the compare slider and the outline view" width="880"></p>
+<p align="center"><a href="https://atharvalakhe.github.io/SVG_Scan/"><img src="assets/studio-preview.png" alt="Current SVG Scan studio: watermelon original and vector comparison on a pale canvas, six trace presets, Fine resolution, palette controls, and SVG export actions" width="1200"></a></p>
+
+<p align="center"><sub>The current vector studio, with automatic Detailed tracing and Fine resolution.</sub></p>
 
 ## Why
 
