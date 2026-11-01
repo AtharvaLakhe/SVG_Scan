@@ -73,7 +73,58 @@ test('shaded grayscale artwork is not reduced to two-color line art',async({page
     const input=document.querySelector('#fileInput');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));
   });
   await expect(page.locator('[data-preset="detailed"]')).toHaveAttribute('aria-pressed','true');
-  await expect(page.locator('#colors')).toHaveValue('64');
+  expect(Number(await page.locator('#colors').inputValue())).toBeGreaterThanOrEqual(64);
   await expect(page.locator('#download')).toBeEnabled({timeout:30000});
   expect(await page.locator('#vector .trace-layer').count()).toBeGreaterThan(8);
+});
+
+test('new images keep full source resolution within the Fine limit',async({page})=>{
+  const png=await page.evaluate(()=>{
+    const c=document.createElement('canvas');c.width=1600;c.height=1000;
+    const g=c.getContext('2d');g.fillStyle='#315b80';g.fillRect(0,0,1600,1000);
+    return c.toDataURL().split(',')[1];
+  });
+  await page.locator('#fileInput').setInputFiles({name:'full-size.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  await expect(page.locator('#workingSize')).toContainText('1600 × 1000 working pixels');
+});
+
+test('automatic flat artwork and Reset retain a native one-pixel accent',async({page})=>{
+  const png=await page.evaluate(()=>{
+    const c=document.createElement('canvas');c.width=128;c.height=96;
+    const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,128,96);
+    g.fillStyle='#315b80';g.fillRect(10,10,32,40);g.fillStyle='#ff0000';g.fillRect(85,61,1,1);
+    return c.toDataURL().split(',')[1];
+  });
+  await page.locator('#fileInput').setInputFiles({name:'accent.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  async function accent(){return page.evaluate(async()=>{
+    const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(document.querySelector('#vector svg').outerHTML);await image.decode();
+    const c=document.createElement('canvas');c.width=128;c.height=96;const g=c.getContext('2d');g.drawImage(image,0,0,128,96);
+    return Array.from(g.getImageData(85,61,1,1).data);
+  });}
+  let pixel=await accent();expect(pixel[0]).toBe(255);expect(pixel[1]).toBeLessThan(3);expect(pixel[2]).toBeLessThan(3);
+  await page.getByRole('button',{name:'Photo',exact:true}).click();
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  await page.getByRole('button',{name:'Reset',exact:true}).click();
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  pixel=await accent();expect(pixel[1]).toBeLessThan(3);expect(pixel[2]).toBeLessThan(3);
+});
+
+test('a downsampled panorama exports without transparent letterboxing',async({page})=>{
+  const png=await page.evaluate(()=>{
+    const c=document.createElement('canvas');c.width=16000;c.height=100;
+    const g=c.getContext('2d');g.fillStyle='#315b80';g.fillRect(0,0,16000,100);
+    return c.toDataURL().split(',')[1];
+  });
+  await page.locator('#fileInput').setInputFiles({name:'panorama.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  const pending=page.waitForEvent('download');await page.locator('#download').click();const file=await pending;
+  const svg=await require('node:fs/promises').readFile(await file.path(),'utf8');
+  const pixels=await page.evaluate(async svg=>{
+    const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(svg);await image.decode();
+    const c=document.createElement('canvas');c.width=16000;c.height=100;const g=c.getContext('2d');g.drawImage(image,0,0);
+    return [g.getImageData(8000,0,1,1).data[3],g.getImageData(8000,99,1,1).data[3]];
+  },svg);
+  expect(pixels).toEqual([255,255]);
 });

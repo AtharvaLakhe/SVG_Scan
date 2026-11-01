@@ -20,21 +20,21 @@ Runs entirely in your browser. No uploads, no sign-up, zero dependencies.
 
 ## Why
 
-Most "PNG to SVG" sites upload your image to a server, wrap the result in a paywall, or hand back a single path stuffed with thousands of jagged nodes. SVG Scan does the whole job on your machine, in a Web Worker, in a couple hundred milliseconds, and the output is something you'd actually commit.
+SVG Scan processes images on your machine, with progress and cancellation through a Web Worker. You control the palette, retained detail, and finish; the export contains editable SVG paths and supported gradients.
 
 ## What it does
 
 ### Image to SVG
 
 - **Drop, paste or pick** any PNG, JPG, WebP or GIF. <kbd>Ctrl</kbd> <kbd>V</kbd> works from anywhere on the page.
-- **Presets** for logos, illustrations, compact photos, line art, detailed images, and a Clean finish. Complex and shaded grayscale images automatically use Detailed: 64 colors, fine curves, and no structural cleanup. Choose Clean finish for softer shading and less grain at high zoom.
-- **Live controls** for up to 128 colors, detail, smoothness, noise and edge-aware denoising. Fast, Balanced and Fine resolutions work up to 900, 1400 and 2200 px, within a four-million-pixel ceiling. Every change re-traces off the main thread.
+- **Presets** for logos, illustrations, compact photos, line art, detailed images, and a Clean finish. Automatic settings preserve exact small palettes and recommend 64 or 96 tones for richer artwork, with no structural cleanup. Choose Clean finish for softer shading and less grain at high zoom.
+- **Live controls** for up to 128 colors, detail, smoothness, noise and edge-aware denoising. Fast, Balanced and Fine resolutions work up to 900, 1400 and 2200 px, within a four-million-pixel ceiling. Fine is the initial choice; small sources stay at their original size. Every change re-traces off the main thread.
 - **Canvas-first workspace** with a pale drafting surface, compact forest chrome, illustrated trace presets, Adjust and Palette tabs, and anchored desktop exports. The introduction steps aside after loading an image. Focus mode expands the editor; Fit, actual-size zoom and a miniature navigator make enlarged images easier to explore. Advanced cleanup and technical explanations stay out of the way until needed.
 - **Current-result exports** wait for settings changes to finish tracing, including during slider debounce and code-mode switching. Cancelling a retrace restores access to the last completed vector.
 - **Transparency** stays translucent through a vector luminance mask applied once to the composed layers. No embedded bitmap.
 - **Cancel and replace** long traces; results from old images and settings are discarded.
-- **Smooth gradients**: shaded areas come out as real `<linearGradient>` and `<radialGradient>` fills (with focal points for lit 3D shapes) instead of stepped bands. Toggle it to see the difference.
-- **Compare, Vector and Outline views**, with a drag-to-compare slider and zoom up to 3200%. The original pixelates, the vector stays sharp.
+- **Smooth gradients**: qualifying shading uses real `<linearGradient>` and `<radialGradient>` fills, including focal points for lit shapes. Complex textures and shading can still retain quantized bands. Toggle it to see the difference.
+- **Compare, Vector and Outline views**, with a drag-to-compare slider, Fit and actual-size zoom, panning, and a miniature navigator.
 - **Drop a color** from the Palette tab to leave that layer out of the export, then restore all colors in one click. With stacked layers, removing a foreground color reveals the layers underneath.
 - **Real stats**: path count, node count, file size, trace time.
 
@@ -69,25 +69,31 @@ Path data is written with relative commands computed between already-rounded poi
 
 ### Measured quality
 
-Measured against revision `b36b29a` on the same inputs, working sizes, and Chromium version. Error is RGB RMSE (0–255), composited on white; lower is better. Full measurements, dimensions, sizes, nodes and timings are in [`tests/benchmark/results.json`](tests/benchmark/results.json). Timings depend on the machine and browser.
+The repeatable accuracy suite compares revision `f9e375d` with the updated application defaults: previous automatic Balanced settings versus current automatic Fine settings, using identical images and rendering actual exports at the **original source dimensions**. It measures RGB RMSE on white and black, alpha RMSE and bias, edge error, output bytes, nodes, and time. Lower RMS is better. This comparison includes preparation, recommendation, fitting, transparency, and export fixes; it does not isolate a single algorithm change.
 
-| Photo | Previous Photo preset | Detailed preset | Error reduction | Detailed SVG size |
-| --- | --- | --- | --- | --- |
-| Dog | 19.75 | **4.64** | 77% | 6.17 MB |
-| Landscape | 14.24 | **5.36** | 62% | 4.60 MB |
+The tracked report contains 21 reproducible cases, including six photographs, vector-style art, fine ink, pixel art, soft transparency, different shading directions, and a 2400 × 1600 tiled photographic stress case. An additional local run used the user's original grayscale image. Full numbers are in [`tests/benchmark/accuracy-results.json`](tests/benchmark/accuracy-results.json); fixture provenance is in [`tests/fixtures/README.md`](tests/fixtures/README.md). Results depend on the browser and available fonts for generated text/emoji; timings also depend on hardware and concurrent work.
 
-Detailed preserves tiny shaded regions by disabling despeckling and soft-region merging. It prioritizes fidelity and can produce multi-megabyte SVGs with hundreds of thousands of nodes. Photo retains compact, simplified output. More colors do not guarantee a better result for every image.
-
-Clean finish keeps 64 tones and uses stronger edge-aware denoising with rounded small contours. Its 7×7 filter suppresses low-contrast grain while retaining contrasting lines, and the cleaned tones drive both geometry and paint. It exports ordinary vector paths without embedded images or blur filters. Cleaning simplifies some fine texture; it cannot reconstruct detail missing from the source. Detailed remains available when source texture matters more than a smooth finish.
-
-| Existing fixture | Before RMSE | Current default RMSE |
+| Source | Previous export RGB RMSE | Updated export RGB RMSE |
 | --- | --- | --- |
-| Fox emoji | 5.87 | 5.07 |
-| Rocket emoji | 5.29 | 4.51 |
-| Flat logo and text | 7.89 | 7.89 |
-| Line art | 7.18 | 7.18 |
-| Shaded sphere | 4.65 | 4.65 |
-| Gradient sunset | 3.36 | 3.36 |
+| Logo and text | 11.58 | **5.60** |
+| Line art | 11.52 | **5.78** |
+| Astronaut portrait | 7.18 | **6.73** |
+| Coffee photograph | 7.46 | **6.09** |
+| Dog photograph | 4.64 | **4.15** |
+| Different shading directions | 9.04 | **2.25** |
+| Pixel art with one-pixel accents | 12.27 | **0.16** |
+| Translucent photograph | 3.94 | **1.42** |
+| Large photographic texture | 12.08 | **9.29** |
+
+Soft-glow alpha RMS fell from 6.53 to 3.65, and transparent-curve alpha RMS from 7.09 to 3.42. Partial opacity is rounded to the nearest band rather than consistently increased. Exports also preserve their intended dimensions when integer working sizes slightly change aspect ratio.
+
+Automatic recommendations preserve exact palettes of at most 128 visible RGB colors without smoothing, blur, or structural cleanup. Rich small images start with 96 tones; larger detailed images use 64 to limit geometry growth. Verified simple ramps retain compact gradient output. Manual presets and controls remain available.
+
+Detailed prioritizes fidelity. Fine retains source pixels up to its limit and never enlarges small images. Large textures can produce **tens of megabytes**: the 2400 × 1600 stress case generated a 27.6 MB SVG with 2.4 million nodes. Lower resolution, fewer colors, or the compact Photo preset reduce that cost. More colors do not guarantee a better fit for every image.
+
+Clean finish keeps 64 tones and uses stronger edge-aware denoising with rounded small contours. Its 7×7 filter suppresses low-contrast grain while retaining contrasting lines; cleaned tones drive geometry and paint. It exports ordinary paths without embedded images or blur filters. Cleaning simplifies some texture and cannot reconstruct information absent from the source.
+
+The earlier historical comparison with `b36b29a` remains in [`tests/benchmark/results.json`](tests/benchmark/results.json).
 
 ## Use the engine in your own project
 
@@ -128,9 +134,9 @@ const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colo
 
 `trace()` accepts an unsigned RGBA byte array (`Uint8Array`, `Uint8ClampedArray`, or Node `Buffer`) with integer dimensions and at most 4,000,000 pixels. Invalid inputs and nonfinite numeric options throw descriptive errors. Numeric options are bounded before processing. Tiny components are retained when noise filtering is disabled.
 
-`result.alpha` contains vector opacity-mask paths; `result.stats.alphaNodes` counts their nodes. `toSVG(result, { idPrefix: 'my-icon-' })` lets you avoid definition ID collisions when embedding several generated SVGs in one document. Opacity uses exact levels when there are at most 16 and quantizes richer alpha to at most 16 bands. Highly textured transparency is rejected once its mask boundaries exceed 500,000 edges, before contour allocation; lower the resolution or flatten that image first.
+`result.alpha` contains vector opacity-mask paths; `result.stats.alphaNodes` counts their nodes. `toSVG(result, { idPrefix: 'my-icon-' })` lets you avoid definition ID collisions when embedding several generated SVGs in one document. Opacity uses exact levels when there are at most 16 and quantizes richer alpha to at most 16 bands using nearest-level rounding. Set `preserveAspectRatio: 'none'` in `toSVG` options when explicit output dimensions must stretch the working viewBox exactly, as the app does to avoid rounding-related letterboxing. Highly textured transparency is rejected once its mask boundaries exceed 500,000 edges, before contour allocation; lower the resolution or flatten that image first.
 
-Grayscale alone does not imply line art. Automatic selection uses Line art only for genuinely two-tone grayscale input; shaded grayscale artwork uses Detailed. The manual Line art preset intentionally reduces the image to two colors.
+Grayscale alone does not imply line art. Automatic analysis considers every visible alpha level and preserves bounded exact palettes, including rare accents. Rich shaded grayscale artwork uses Detailed. The manual Line art preset intentionally reduces the image to two colors.
 
 ### Limits
 
@@ -170,6 +176,8 @@ npx playwright install chromium
 npm test
 npm run test:browser
 ```
+
+Run `npm run bench:accuracy` while serving the repository to reproduce the pinned source-dimension comparison (Git must be available for the baseline). Set `SVG_SCAN_REPORT_DIR` to save full and 300% comparison images; `SVG_SCAN_GIT` can point to a Git executable outside PATH.
 
 The browser tests start a local static server automatically, or reuse a server on port 8765. They exercise real workers, cancellation, replacement, fallback, pixel-level opacity and hole rendering, code conversion, mobile layout and keyboard operation.
 

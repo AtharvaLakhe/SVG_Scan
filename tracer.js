@@ -101,6 +101,7 @@
     var fitOpts = {
       tol: o.tolerance,
       passes: o.smoothness <= 0 ? 0 : Math.max(1, Math.round(o.smoothness * 2.3)),
+      amount: Math.min(1, o.smoothness),
       corner: clamp(o.corner, 20, 85) * Math.PI / 180,
       prec: o.precision
     };
@@ -791,18 +792,18 @@
       i = corners[ci];
       var a1 = (i - k + n) % n, a2 = (i - kh + n) % n, b1 = (i + kh) % n, b2 = (i + k) % n;
       var hit = intersect(X[a1], Y[a1], X[a2], Y[a2], X[b1], Y[b1], X[b2], Y[b2]);
-      snapped.push(hit && Math.hypot(hit[0] - X[i], hit[1] - Y[i]) < k * 0.75 ? hit : null);
+      snapped.push(hit && Math.hypot(hit[0] - X[i], hit[1] - Y[i]) < Math.min(k * 0.75, o.tol * .5) ? hit : null);
     }
     for (ci = 0; ci < corners.length; ci++) if (snapped[ci]) { X[corners[ci]] = snapped[ci][0]; Y[corners[ci]] = snapped[ci][1]; }
 
     // Smooth away pixel noise, keeping corners pinned.
-    var TX = new Float64Array(n), TY = new Float64Array(n);
+    var TX = new Float64Array(n), TY = new Float64Array(n), weight = .25 * o.amount;
     for (var pass = 0; pass < o.passes; pass++) {
       for (i = 0; i < n; i++) {
         if (isCorner[i]) { TX[i] = X[i]; TY[i] = Y[i]; continue; }
         var pi = (i + n - 1) % n, ni = (i + 1) % n;
-        TX[i] = (X[pi] + 2 * X[i] + X[ni]) / 4;
-        TY[i] = (Y[pi] + 2 * Y[i] + Y[ni]) / 4;
+        TX[i] = weight * X[pi] + (1 - 2 * weight) * X[i] + weight * X[ni];
+        TY[i] = weight * Y[pi] + (1 - 2 * weight) * Y[i] + weight * Y[ni];
       }
       var sw = X; X = TX; TX = sw; sw = Y; Y = TY; TY = sw;
     }
@@ -1052,13 +1053,13 @@
       levels.add(a);
     }
     if (!partial) return [];
-    var quantized = levels.size > 16, values = quantized ? Array.from({ length: 16 }, function (_, j) { return (j + 1) * 16 - 1; }) : Array.from(levels).sort(function (a, b) { return a - b; });
+    var quantized = levels.size > 16, values = quantized ? Array.from({ length: 16 }, function (_, j) { return Math.min(255, (j + 1) * 16); }) : Array.from(levels).sort(function (a, b) { return a - b; });
     var mask = new Uint8Array(N), out = [], edgeCount = 0;
     values.forEach(function (value) {
       var any = false;
       for (var p = 0; p < N; p++) {
         var alpha = px[p * 4 + 3];
-        var level = quantized && alpha ? Math.min(255, Math.ceil(alpha / 16) * 16 - 1) : alpha;
+        var level = quantized ? Math.min(255, Math.round(alpha / 16) * 16) : alpha;
         mask[p] = level >= value ? 1 : 0;
         if (mask[p]) any = true;
       }
@@ -1154,6 +1155,7 @@
       body = '\n<g mask="url(#' + prefix + 'alpha)">' + body + '\n</g>';
     }
     var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + res.width + ' ' + res.height + '"';
+    if (opt.preserveAspectRatio === 'none') s += ' preserveAspectRatio="none"';
     if (opt.width) s += ' width="' + opt.width + '" height="' + opt.height + '"';
     s += '>' + (defs ? '\n<defs>' + defs + '\n</defs>' : '') + body;
     return s + '\n</svg>\n';

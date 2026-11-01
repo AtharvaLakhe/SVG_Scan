@@ -623,7 +623,7 @@ textarea::placeholder { color: var(--faint); }
           <p class="trace-note preset-note" id="presetNote">Balanced curves for colorful artwork.</p>
         </div>
         <div class="group sliders">
-          <label class="quality-field" for="quality">Working resolution<select id="quality"><option value="fast">Fast · up to 900 px</option><option value="balanced" selected>Balanced · up to 1400 px</option><option value="fine">Fine · up to 2200 px</option></select></label>
+          <label class="quality-field" for="quality">Working resolution<select id="quality"><option value="fast">Fast · up to 900 px</option><option value="balanced">Balanced · up to 1400 px</option><option value="fine" selected>Fine · up to 2200 px</option></select></label>
           <p class="trace-note" id="workingSize" aria-live="polite">Choose an image to see its working size.</p>
           <label class="slider"><span>Colors</span><output id="colorsOut" for="colors" aria-hidden="true">14</output><input type="range" id="colors" min="2" max="128" value="14" aria-label="Colors" aria-describedby="colorsHelp"><span class="slider-caption" id="colorsHelp">A smaller palette makes a lighter SVG.</span></label>
           <label class="slider"><span>Detail</span><output id="detailOut" for="detail" aria-hidden="true">65</output><input type="range" id="detail" min="0" max="100" value="65" aria-label="Detail" aria-describedby="detailHelp"><span class="slider-caption" id="detailHelp">Keep more of the small shapes.</span></label>

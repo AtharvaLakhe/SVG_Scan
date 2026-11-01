@@ -89,3 +89,26 @@ test('strong grain reduction cleans shading while retaining a thin ink line',asy
   expect(samples.shading).toBeLessThan(3);
   expect(samples.ink).toBeLessThan(24);
 });
+
+test('Detailed fits native ink curves without excessive edge deformation',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    const source=lineart().getContext('2d').getImageData(0,0,600,420);
+    const r=SVGScan.trace(source,engineOpts(PRESETS.detailed,source));
+    return {error:err(source,await rasterize(SVGScan.toSVG(r),600,420)),curves:r.layers.some(l=>/[cC]/.test(l.d))};
+  });
+  expect(result.curves).toBe(true);
+  expect(result.error).toBeLessThan(6);
+});
+
+test('quantized soft transparency is unbiased on both light and dark backgrounds',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    const width=256,height=8,data=new Uint8ClampedArray(width*height*4);
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++)data.set([80,180,250,x],(y*width+x)*4);
+    const source={width,height,data},r=SVGScan.trace(source,{colors:2,noise:0,gradients:false,smoothness:0,tolerance:.2});
+    const rendered=await rasterize(SVGScan.toSVG(r),width,height);let bias=0,sse=0;
+    for(let i=3;i<data.length;i+=4){const e=rendered.data[i]-data[i];bias+=e;sse+=e*e;}
+    return {bias:bias/(width*height),rms:Math.sqrt(sse/(width*height))};
+  });
+  expect(Math.abs(result.bias)).toBeLessThan(1);
+  expect(result.rms).toBeLessThan(5);
+});

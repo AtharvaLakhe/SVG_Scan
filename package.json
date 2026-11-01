@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:browser": "playwright test",
-    "bench": "node tests/benchmark/measure.js"
+    "bench": "node tests/benchmark/measure.js",
+    "bench:accuracy": "node tests/benchmark/accuracy.cjs"
   },
   "engines": {
     "node": ">=20"

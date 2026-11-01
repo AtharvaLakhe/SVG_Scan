@@ -184,20 +184,28 @@
     $('#' + input.id + 'Out').textContent = input.value;
   }
 
-  function applyPreset(name, run) {
-    const p = PRESETS[name];
+  function applyPreset(name, run, overrides) {
+    const p = { ...PRESETS[name], ...overrides };
     Object.keys(sliders).forEach((k) => { sliders[k].value = p[k]; paintSlider(sliders[k]); });
     T.blur = p.blur;
     T.majority = p.majority;
     T.merge = p.merge;
     T.dehalo = p.dehalo;
+    $('#optGradients').checked = p.gradients !== false;
     const notes = { logo: 'Crisp shapes and a small, focused palette.', illustration: 'Balanced curves for colorful artwork.', photo: 'A compact, simplified take on your photo.', lineart: 'Two-color contours. Choose Detailed to keep shading.', detailed: 'Keeps fine texture and small features. Grain stays visible at high zoom.', clean: 'Softer shading and rounded small shapes. Reduces grain; some texture is simplified.' };
     $('#presetNote').textContent = notes[name];
     $$('#presets .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.preset === name));
     if (run) requestTrace(false);
   }
 
-  function guessPreset(img) { return SVGScanSettings.guessPreset(img); }
+  function applySuggested(run) {
+    if (!T.data) { applyPreset('illustration', run); return; }
+    const suggestion = SVGScanSettings.recommend(T.data);
+    applyPreset(suggestion.preset, run, suggestion.settings);
+    if (suggestion.exactColors) {
+      $('#presetNote').textContent = suggestion.exactColors + ' source ' + (suggestion.exactColors === 1 ? 'color' : 'colors') + ' kept. No smoothing or detail removal.';
+    }
+  }
 
   function engineOpts() {
     const settings = Object.fromEntries(Object.entries(sliders).map(([key, input]) => [key, +input.value]));
@@ -276,7 +284,7 @@
     raster.src = url;
     showWorkspace();
     setView('vector');
-    applyPreset(guessPreset(T.data), false);
+    applySuggested(false);
     requestTrace(true);
   }
 
@@ -572,7 +580,7 @@
   }
 
   function exportSvg() {
-    return SVGScan.toSVG(T.result, { hidden: T.hidden, width: T.natW, height: T.natH });
+    return SVGScan.toSVG(T.result, { hidden: T.hidden, width: T.natW, height: T.natH, preserveAspectRatio: 'none' });
   }
 
   function updateStats() {
@@ -615,7 +623,7 @@
     if (T.result) updateStats();
     showStatus(T.result ? 'Trace cancelled. Showing your last completed vector.' : 'Trace cancelled. Change a setting to trace again.', true);
   });
-  $('#resetSettings').addEventListener('click', () => applyPreset(T.data ? guessPreset(T.data) : 'illustration', true));
+  $('#resetSettings').addEventListener('click', () => applySuggested(true));
   $('#restoreColors').addEventListener('click', () => {
     if (!T.result) return;
     T.hidden.clear(); renderVector(false); renderSwatches(false); updateStats();

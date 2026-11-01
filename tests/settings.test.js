@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const settings = require('../trace-settings.js');
+const {trace}=require('../tracer.js');
 
 test('fine resolution preserves more working pixels than balanced on large images', () => {
   const fine = settings.workingSize(4000, 3000, 'fine');
@@ -60,4 +61,28 @@ test('three distinct gray fills are kept instead of being forced into two colors
 
 test('grayscale photographs with a full tonal range receive Detailed',()=>{
   assert.equal(settings.guessPreset(pixels(256,32,x=>[x,x,x,255])),'detailed');
+});
+
+test('small images keep their original pixels instead of being enlarged',()=>{
+  for(const quality of ['fast','balanced','fine'])assert.deepEqual(settings.workingSize(320,240,quality),{width:320,height:240});
+});
+
+test('automatic settings preserve a rare accent in a flat palette',()=>{
+  const source=pixels(1000,500,(x,y)=>x===701&&y===301?[255,0,0,255]:[255,255,255,255]);
+  const recommendation=settings.recommend(source);
+  const result=trace(source,settings.engineOptions(recommendation.settings,source));
+  assert.ok(result.layers.some(l=>l.color==='#ff0000'&&l.coverage===1/500000));
+});
+
+test('translucent photographs participate in automatic detection',()=>{
+  const source=pixels(200,160,(x,y)=>[(x*7+y)%256,(x+y*11)%256,(x*13+y*3)%256,64]);
+  assert.equal(settings.guessPreset(source),'detailed');
+});
+
+test('automatic exact palettes keep every visible translucent color',()=>{
+  const source=pixels(120,40,x=>[20+Math.floor(x/10)*19,40,150,64]);
+  const recommendation=settings.recommend(source);
+  const result=trace(source,settings.engineOptions(recommendation.settings,source));
+  assert.equal(result.layers.length,12);
+  assert.ok(result.layers.every(l=>!l.gradient));
 });
