@@ -47,6 +47,19 @@ test('image selection is reachable with the keyboard',async({page})=>{
   await expect(page.locator('#download')).toBeEnabled({timeout:30000});
 });
 
+test('Clean finish reduces traced grain and keeps exports available',async({page})=>{
+  await page.locator('#fileInput').setInputFiles(require('node:path').resolve(__dirname,'../fixtures/mountain.jpg'));
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  const nodes=()=>page.locator('#stNodes').innerText().then(s=>Number(s.replace(/,/g,'')));
+  const detailed=await nodes();
+  await page.getByRole('button',{name:'Clean finish',exact:true}).click();
+  await expect.poll(nodes,{timeout:30000}).toBeLessThan(detailed*.8);
+  await expect(page.locator('#download')).toBeEnabled({timeout:30000});
+  const download=page.waitForEvent('download');await page.locator('#download').click();
+  const file=await download;
+  expect(file.suggestedFilename()).toMatch(/\.svg$/);
+});
+
 test('replacement clears stale palette controls while the new image decodes',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.locator('.sample[data-sample="sunset"]').click();

@@ -67,8 +67,10 @@
     if (o.noise > 1) despeckle(labels, W, H, Math.round(o.noise));
     if (o.gradients && o.merge > 0) mergeSmooth(image.data, labels, W, H, palette.length / 3, o.merge);
 
-    // Final colors are each region's average on the original pixels, measured
-    // away from its edges so anti-aliasing doesn't tint flat colors.
+    // Measure away from edges so anti-aliasing doesn't tint flat colors.
+    // With explicit grain reduction, use the cleaned tones for paint as well
+    // as geometry; re-sampling the noisy original brings tonal speckles back.
+    var paint = o.denoise > 0 ? px : image.data;
     var K = palette.length / 3, sum = new Float64Array(K * 4), all = new Float64Array(K * 4), area = new Float64Array(K), i, l;
     var box = new Int32Array(K * 4);
     for (i = 0; i < K; i++) { box[i * 4] = W; box[i * 4 + 1] = H; box[i * 4 + 2] = -1; box[i * 4 + 3] = -1; }
@@ -78,7 +80,7 @@
       var x = i % W, y = (i - x) / W, acc = x > 0 && x < W - 1 && y > 0 && y < H - 1 &&
         labels[i - 1] === l && labels[i + 1] === l && labels[i - W] === l && labels[i + W] === l ? sum : all;
       area[l]++;
-      acc[l * 4] += image.data[i * 4]; acc[l * 4 + 1] += image.data[i * 4 + 1]; acc[l * 4 + 2] += image.data[i * 4 + 2]; acc[l * 4 + 3]++;
+      acc[l * 4] += paint[i * 4]; acc[l * 4 + 1] += paint[i * 4 + 1]; acc[l * 4 + 2] += paint[i * 4 + 2]; acc[l * 4 + 3]++;
       if (x < box[l * 4]) box[l * 4] = x;
       if (y < box[l * 4 + 1]) box[l * 4 + 1] = y;
       if (x > box[l * 4 + 2]) box[l * 4 + 2] = x;
@@ -91,7 +93,7 @@
     var rank = new Int16Array(K).fill(-1);
     order.forEach(function (lb, r) { rank[lb] = r; });
 
-    var grads = o.gradients ? fitGradients(image.data, labels, W, H, K) : [];
+    var grads = o.gradients ? fitGradients(paint, labels, W, H, K) : [];
 
     var mask = new Uint8Array(N), layers = [], nodes = 0, pixelsOf = [], fillAt = new Int32Array(K);
     for (i = 0; i < K; i++) pixelsOf.push(new Int32Array(area[i]));
@@ -722,11 +724,35 @@
     var n = p.length >> 1, w = new PathWriter(o.prec), i;
     if (n < 3) return { d: '', nodes: 0 };
 
-    // Polygon mode, and loops too small to have a meaningful curve.
+    // Strong smoothing rounds tiny islands too: leaving every one as a
+    // polygon turns cleaned shading into a mosaic when enlarged. Low settings
+    // retain the compact original facets; polygon mode and alpha stay exact.
     if (!o.passes || n < 10) {
       var poly = simplifyClosed(p, Math.min(o.tol, n < 10 ? .2 : o.tol));
       var m = poly.length >> 1;
       if (m < 3) return { d: '', nodes: 0 };
+      if (o.passes >= 2) {
+        var entry = [], exit = [], fraction = Math.min(.45, .2 + o.passes * .05);
+        for (i = 0; i < m; i++) {
+          var prev = (i + m - 1) % m, next = (i + 1) % m;
+          var px = poly[2 * i], py = poly[2 * i + 1];
+          var ax = poly[2 * prev] - px, ay = poly[2 * prev + 1] - py;
+          var bx = poly[2 * next] - px, by = poly[2 * next + 1] - py;
+          var al = Math.hypot(ax, ay), bl = Math.hypot(bx, by), reach = Math.min(al, bl) * fraction;
+          entry.push(px + ax * reach / al, py + ay * reach / al);
+          exit.push(px + bx * reach / bl, py + by * reach / bl);
+        }
+        w.move(entry[0], entry[1]);
+        for (i = 0; i < m; i++) {
+          var vx = poly[2 * i], vy = poly[2 * i + 1];
+          w.curve((entry[2 * i] + 2 * vx) / 3, (entry[2 * i + 1] + 2 * vy) / 3,
+            (exit[2 * i] + 2 * vx) / 3, (exit[2 * i + 1] + 2 * vy) / 3, exit[2 * i], exit[2 * i + 1]);
+          var ni = (i + 1) % m;
+          w.line(entry[2 * ni], entry[2 * ni + 1]);
+        }
+        w.close();
+        return { d: w.s, nodes: m * 2 };
+      }
       w.move(poly[0], poly[1]);
       for (i = 1; i < m; i++) w.line(poly[2 * i], poly[2 * i + 1]);
       w.close();
@@ -988,19 +1014,26 @@
     // Ignore transparent neighbors so hidden RGB never bleeds into visible art.
   function edgeBlur(src, W, H, strength) {
     var out = new Uint8ClampedArray(src), sigma = 4 + strength * .5, denom = 2 * sigma * sigma;
+    // A fixed 3x3 window leaves JPEG grain as hundreds of thousands of tiny
+    // color islands. Expand spatial support at higher strengths, while the
+    // range weights still protect contrasting ink and silhouette boundaries.
+    var radius = 1 + Math.floor(strength / 40), neighbors = [];
+    for (var dy = -radius; dy <= radius; dy++) for (var dx = -radius; dx <= radius; dx++) {
+      neighbors.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / (radius * radius))]);
+    }
     var weights = new Float32Array(195076);
     for (var d = 0; d < weights.length; d++) weights[d] = Math.exp(-d / denom);
     for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
       var p = (y * W + x) * 4;
       if (!src[p + 3]) continue;
       var r = 0, g = 0, b = 0, total = 0;
-      for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
-        var xx = x + dx, yy = y + dy;
+      for (var ni = 0; ni < neighbors.length; ni++) {
+        var neighbor = neighbors[ni], xx = x + neighbor[0], yy = y + neighbor[1];
         if (xx < 0 || xx >= W || yy < 0 || yy >= H) continue;
         var q = (yy * W + xx) * 4;
         if (!src[q + 3]) continue;
         var dr = src[p] - src[q], dg = src[p + 1] - src[q + 1], db = src[p + 2] - src[q + 2];
-        var weight = weights[dr * dr + dg * dg + db * db] * Math.exp(-(dx * dx + dy * dy) / 2) * src[q + 3] / 255;
+        var weight = weights[dr * dr + dg * dg + db * db] * neighbor[2] * src[q + 3] / 255;
         total += weight; r += src[q] * weight; g += src[q + 1] * weight; b += src[q + 2] * weight;
       }
       out[p] = r / total; out[p + 1] = g / total; out[p + 2] = b / total;

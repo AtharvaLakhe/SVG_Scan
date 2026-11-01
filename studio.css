@@ -71,8 +71,6 @@
 .group h3 { font-size: 12px; font-weight: 600; margin-bottom: 10px; }
 .chips { gap: 6px; }
 .chip { font-size: 11px; min-height: 34px; padding: 5px 8px; border-radius: 7px; }
-.chips .chip[data-preset="detailed"] { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding-inline: 11px; }
-.chip[data-preset="detailed"]::after { content: 'Fine textures'; font-size: 9px; font-weight: 400; color: var(--muted); }
 .preset-note { min-height: 34px; margin-top: 9px; }
 .trace-note { color: var(--muted); font-size: 11px; line-height: 1.6; }
 .sliders { gap: 15px; }

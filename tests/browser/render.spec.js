@@ -69,3 +69,23 @@ test('Detailed preserves isolated shaded marks in a large grayscale image',async
   });
   expect(rmse).toBeLessThan(10);
 });
+
+test('strong grain reduction cleans shading while retaining a thin ink line',async({page})=>{
+  const samples=await page.evaluate(async()=>{
+    const width=160,height=100,data=new Uint8ClampedArray(width*height*4);let seed=7;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+      const v=x===80?12:130+Math.round(x*.2)+((seed>>>24)%31)-15;
+      data.set([v,v,v,255],(y*width+x)*4);
+    }
+    const r=SVGScan.trace({width,height,data},{colors:64,denoise:100,noise:0,dehalo:false,merge:0,gradients:false,tolerance:.35,smoothness:.6});
+    const out=await rasterize(SVGScan.toSVG(r),width,height);let sse=0,n=0,ink=0;
+    for(let y=10;y<90;y++){
+      ink+=out.data[(y*width+80)*4];
+      for(let x=10;x<150;x++){if(Math.abs(x-80)<8)continue;const e=out.data[(y*width+x)*4]-(130+Math.round(x*.2));sse+=e*e;n++;}
+    }
+    return {shading:Math.sqrt(sse/n),ink:ink/80};
+  });
+  expect(samples.shading).toBeLessThan(3);
+  expect(samples.ink).toBeLessThan(24);
+});

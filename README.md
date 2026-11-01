@@ -27,7 +27,7 @@ Most "PNG to SVG" sites upload your image to a server, wrap the result in a payw
 ### Image to SVG
 
 - **Drop, paste or pick** any PNG, JPG, WebP or GIF. <kbd>Ctrl</kbd> <kbd>V</kbd> works from anywhere on the page.
-- **Presets** for logos, illustrations, compact photos, line art, and detailed images. Complex and shaded grayscale images automatically use Detailed: 64 colors, fine curves, and no structural cleanup.
+- **Presets** for logos, illustrations, compact photos, line art, detailed images, and a Clean finish. Complex and shaded grayscale images automatically use Detailed: 64 colors, fine curves, and no structural cleanup. Choose Clean finish for softer shading and less grain at high zoom.
 - **Live controls** for up to 128 colors, detail, smoothness, noise and edge-aware denoising. Fast, Balanced and Fine resolutions work up to 900, 1400 and 2200 px, within a four-million-pixel ceiling. Every change re-traces off the main thread.
 - **Focused workspace** with an image header, canvas background choices, Adjust and Palette tabs, an always-visible desktop export area, and a keyboard shortcuts dialog. Advanced cleanup stays out of the way until needed.
 - **Transparency** stays translucent through a vector luminance mask applied once to the composed layers. No embedded bitmap.
@@ -76,6 +76,8 @@ Measured against revision `b36b29a` on the same inputs, working sizes, and Chrom
 | Landscape | 14.24 | **5.36** | 62% | 4.60 MB |
 
 Detailed preserves tiny shaded regions by disabling despeckling and soft-region merging. It prioritizes fidelity and can produce multi-megabyte SVGs with hundreds of thousands of nodes. Photo retains compact, simplified output. More colors do not guarantee a better result for every image.
+
+Clean finish keeps 64 tones and uses stronger edge-aware denoising with rounded small contours. Its 7×7 filter suppresses low-contrast grain while retaining contrasting lines, and the cleaned tones drive both geometry and paint. It exports ordinary vector paths without embedded images or blur filters. Cleaning simplifies some fine texture; it cannot reconstruct detail missing from the source. Detailed remains available when source texture matters more than a smooth finish.
 
 | Existing fixture | Before RMSE | Current default RMSE |
 | --- | --- | --- |

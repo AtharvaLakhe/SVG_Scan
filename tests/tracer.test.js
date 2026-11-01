@@ -76,6 +76,14 @@ test('edge-aware denoising preserves a narrow contrasting line', () => {
   assert.ok(result.layers.some(l => l.color === '#000000' && l.coverage >= .03));
 });
 
+test('smoothness rounds tiny color islands rather than leaving polygon facets', () => {
+  const src=image(10,10,(x,y)=>x===5&&y===5?[255,255,255,255]:[0,0,0,255]);
+  const result=trace(src,{...exact,colors:2,smoothness:1});
+  const accent=result.layers.find(l=>l.color==='#ffffff');
+  assert.match(accent.d,/[cC]/);
+  assert.doesNotMatch(toSVG(result),/<filter|<image/);
+});
+
 test('cleanup preserves a transparent pinhole surrounded by opaque pixels', () => {
   const src = image(21, 21, (x, y) => [255, 0, 0, x === 10 && y === 10 ? 0 : 255]);
   const result = trace(src, { colors: 2, noise: 20, majority: 2, gradients: false, smoothness: 0, tolerance: .2 });

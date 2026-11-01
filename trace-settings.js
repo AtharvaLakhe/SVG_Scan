@@ -6,7 +6,8 @@
     illustration: { colors: 14, detail: 60, smooth: 72, noise: 30, blur: 1, majority: 2, denoise: 0, dehalo: true },
     photo: { colors: 20, detail: 45, smooth: 80, noise: 50, blur: 2, majority: 3, denoise: 0, dehalo: true },
     lineart: { colors: 2, detail: 75, smooth: 62, noise: 26, blur: 0, majority: 0, denoise: 0, dehalo: true },
-    detailed: { colors: 64, detail: 85, smooth: 24, noise: 0, blur: 0, majority: 0, denoise: 0, dehalo: false, merge: 0 }
+    detailed: { colors: 64, detail: 85, smooth: 24, noise: 0, blur: 0, majority: 0, denoise: 0, dehalo: false, merge: 0 },
+    clean: { colors: 64, detail: 80, smooth: 80, noise: 0, blur: 0, majority: 0, denoise: 100, dehalo: false, merge: 0 }
   };
 
   function guessPreset(img) {

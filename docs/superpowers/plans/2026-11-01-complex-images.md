@@ -14,7 +14,7 @@
 
 - No runtime dependencies, uploads, or build step.
 - Preserve existing code conversion formats and visual style.
-- Use a feature branch; no push or deployment in this task.
+- Follow-up instruction on November 1: commit directly to the existing main branch and GitHub repository using the configured user identity, without Codex attribution. This supersedes the earlier local feature-branch workflow.
 
 ## Review Focus
 
@@ -61,5 +61,16 @@ Baseline verified using the existing browser benchmark. Implementation is author
 - Browser checks cover real workers, synchronous fallback, quality changes, cancellation, sample/file replacement, delayed decode, mask rendering, premultiplied blur, pinholes, currentColor conversion, Android rejection, responsive studio layout, inspector tabs, palette restore, keyboard dialog and file chooser.
 - Two independent reviews ran: engine review found converter/alpha validation issues; whole-change review found stale swatches during replacement decoding. Each has a regression test and a verified correction.
 - Measurement runner compares b36b29a with current code using identical fixture data and Chromium. Detailed dog RMSE 19.75 to 5.31; landscape 14.24 to 5.76. Larger output is deliberate and documented.
-- Ruling: keep the feature branch locally for review. No merge, push, PR, or deployment is required to fulfill local development.
+- Earlier local-only ruling superseded by the user's later instruction to commit directly to main on GitHub. No new branch or PR.
+
+## Zoom finish follow-up
+
+- Reproduced the grain-as-mosaic effect on the user's actual grayscale source at 300% zoom. Texture fidelity alone does not produce a clean vector finish.
+- Strong denoising now expands spatial support through 3×3, 5×5, and 7×7 neighborhoods; spatial weights are precomputed. Cleaned tones drive paint as well as label geometry.
+- At stronger smoothness, tiny loops receive rounded cubic joins instead of bypassing smoothing. Low smoothness and exact polygon/alpha tracing retain compact original geometry.
+- Added an optional Clean finish preset. Detailed remains the automatic fidelity choice, with an explicit texture explanation.
+- The actual image changed from 569,552 to 424,090 nodes; the SVG remains genuine paths. Compared the full figure and a 300% crop visually. Cleaning preserves useful contours but simplifies some texture and cannot invent missing source detail.
+- Regression checks failed first for inadequate grain reduction, unsmoothed tiny loops, and the missing preset. Then all 25 unit tests and 22 browser tests passed.
+- The restarted test server exposed an existing missing CSS MIME type; Chromium rejected the studio stylesheet. Added text/css and reran the full suite successfully.
+- Independent read-only review found no actionable issues, including exhaustive checks of all binary 4×4 masks for invalid tiny-loop geometry.
 - Ruling: preserve the source palette-layer gradient architecture; disconnected shading remains a documented limitation rather than an untested simultaneous rewrite.

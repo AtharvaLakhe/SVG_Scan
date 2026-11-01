@@ -191,7 +191,7 @@
     T.majority = p.majority;
     T.merge = p.merge;
     T.dehalo = p.dehalo;
-    const notes = { logo: 'Crisp shapes and a small, focused palette.', illustration: 'Balanced curves for colorful artwork.', photo: 'A compact, simplified take on your photo.', lineart: 'Two-color contours. Choose Detailed to keep shading.', detailed: 'Fine textures, small features, and richer color. Larger SVGs.' };
+    const notes = { logo: 'Crisp shapes and a small, focused palette.', illustration: 'Balanced curves for colorful artwork.', photo: 'A compact, simplified take on your photo.', lineart: 'Two-color contours. Choose Detailed to keep shading.', detailed: 'Keeps fine texture and small features. Grain stays visible at high zoom.', clean: 'Softer shading and rounded small shapes. Reduces grain; some texture is simplified.' };
     $('#presetNote').textContent = notes[name];
     $$('#presets .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.preset === name));
     if (run) requestTrace(false);
