@@ -4,8 +4,8 @@
 
 # SVG Scan
 
-**Turn any image into a clean SVG, then turn that SVG into React, Vue, CSS or Android code.**<br>
-Runs entirely in your browser. No uploads, no sign-up, zero dependencies.
+**Trace images into editable SVG paths, then convert SVG into React, Vue, CSS or Android code.**<br>
+Runs entirely in your browser. No uploads, no sign-up, no runtime dependencies.
 
 ### [Open SVG Scan &rarr;](https://atharvalakhe.github.io/SVG_Scan/)
 
@@ -21,6 +21,31 @@ Runs entirely in your browser. No uploads, no sign-up, zero dependencies.
 ## Why
 
 SVG Scan processes images on your machine, with progress and cancellation through a Web Worker. You control the palette, retained detail, and finish; the export contains editable SVG paths and supported gradients.
+
+## Get started
+
+1. [Open SVG Scan](https://atharvalakhe.github.io/SVG_Scan/) and drop, paste, or choose an image. Try a built-in sample if you want to explore first.
+2. Let the automatic settings trace it. **Fine** resolution is selected initially; small images stay at their native size.
+3. Switch between **Compare**, **Vector**, and **Outline**. Use **1:1** to inspect detail at the source pixel scale, or **Fit** to see the whole image.
+4. Refine the preset, palette, and curves. Wait for **Vector ready**, then download or copy the SVG. Choose **Get code** for component and platform formats.
+
+**Reset** restores the image's automatic recommendation. Processing stays on your device, including when using the hosted app.
+
+## Choose your finish
+
+| Setting | Use it for | Tradeoff |
+| --- | --- | --- |
+| **Automatic** | A first trace that retains source detail | Exact palettes of up to 128 visible RGB colors keep small marks without cleanup; richer images generally start with Detailed |
+| **Detailed** | Shaded grayscale, detailed artwork, and photo texture | Retains grain and small features; can create large files |
+| **Clean finish** | Softer shading and more rounded contours at high zoom | Reduces grain and simplifies some texture |
+| **Photo** | A more compact photographic interpretation | Uses fewer colors and stronger cleanup, so fine detail is reduced |
+| **Illustration** | Colorful artwork with smoother shapes | Simplifies the palette and small regions |
+| **Logo** | Flat graphics and simple marks | The manual preset uses six colors and cleanup; automatic exact-palette settings can differ |
+| **Line art** | Deliberately two-color drawings | Removes shaded tones; use Detailed for shaded grayscale artwork |
+
+If details disappear, try **Detailed** with **Fine** resolution before increasing colors. If the result looks grainy or meshy when enlarged, try **Clean finish**, then adjust Smoothness and edge-aware denoising. Outline shows the path geometry rather than the finished fills; use Vector to judge the exported appearance.
+
+Fine detail and a smooth finish involve different compromises. The tracer follows information present in the source; it does not redraw objects or recover missing detail. For smaller files, reduce resolution or colors, or try Photo. More colors alone do not guarantee a better result.
 
 ## What it does
 
@@ -52,7 +77,7 @@ Paste or open any SVG and get it back in seven shapes:
 | **Data URI** | A ready-to-paste `<img>` with a base64 source |
 | **Android** | A `VectorDrawable` XML, with shapes converted to paths, transforms mapped to groups and linear and radial gradients kept |
 
-Toggle **TypeScript**, switch every color to **`currentColor`** for icon sets, or pick how many **decimals** to keep. An Inkscape export typically comes out 50 to 70% smaller.
+Toggle **TypeScript**, switch every color to **`currentColor`** for icon sets, or pick how many **decimals** to keep. Cleanup savings depend on the input SVG.
 
 ## How the tracer works
 
@@ -111,10 +136,18 @@ The earlier historical comparison with `b36b29a` remains in [`tests/benchmark/re
 ```
 
 ```js
-// Node: any decoder that gives you RGBA pixels works
+// Node: this example uses sharp, installed separately as an image decoder.
+// Any decoder that gives you RGBA pixels works.
+const sharp = require('sharp');
 const { trace, toSVG } = require('./tracer.js');
-const { data, info } = await sharp('logo.png').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colors: 6 }));
+
+async function main() {
+  const { data, info } = await sharp('logo.png').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const svg = toSVG(trace({ width: info.width, height: info.height, data }, { colors: 6 }));
+  console.log(svg);
+}
+
+main().catch(console.error);
 ```
 
 | Option | Default | What it does |
@@ -179,7 +212,34 @@ npm run test:browser
 
 Run `npm run bench:accuracy` while serving the repository to reproduce the pinned source-dimension comparison (Git must be available for the baseline). Set `SVG_SCAN_REPORT_DIR` to save full and 300% comparison images; `SVG_SCAN_GIT` can point to a Git executable outside PATH.
 
-The browser tests start a local static server automatically, or reuse a server on port 8765. They exercise real workers, cancellation, replacement, fallback, pixel-level opacity and hole rendering, code conversion, mobile layout and keyboard operation.
+The suite covers engine and settings behavior plus real-browser workers, cancellation, replacement, fallback, opacity and hole rendering, exact small palettes, photographic fidelity, export sizing, code conversion, mobile layout, and keyboard operation. Browser tests start a local static server automatically, or reuse a server on port 8765.
+
+### Reproduce the image comparison
+
+After installing the development dependencies and Chromium above, start the included server in one terminal:
+
+```bash
+node tests/server.js
+```
+
+In another terminal, from the repository root:
+
+```bash
+npm run bench:accuracy
+```
+
+This writes the 21-case public report to `tests/benchmark/accuracy-results.json`. Keep the pinned baseline revision in your Git history; a shallow clone may need more history before the comparison can run. A full clone from the local setup instructions includes it.
+
+To also save the before/after gallery and 300% crops, set an output directory. For example, in PowerShell:
+
+```powershell
+$env:SVG_SCAN_REPORT_DIR = Join-Path $env:TEMP 'svg-scan-accuracy'
+npm run bench:accuracy
+```
+
+Use `SVG_SCAN_ORIGIN` for a server address other than `http://127.0.0.1:8765`. The benchmark compares actual exports at source dimensions against revision `f9e375d`; it measures the complete automatic workflow rather than an isolated engine change. Review the images as well as the numbers: lower pixel error does not describe every visual preference.
+
+### Historical benchmark
 
 For the visual benchmark, serve the repo and open `tests/benchmark/bench.html`, then run `runBench()` in its console, or run `node tests/benchmark/measure.js`. Use `runBench(['dog', 'mountain'], {preset: 'detailed'})` to compare quality. To reproduce the previous revision too, save `git show b36b29a:tracer.js` to `.playwright-mcp/baseline-tracer.js` before running the measurement script.
 
